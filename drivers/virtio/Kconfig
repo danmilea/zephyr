@@ -1,0 +1,23 @@
+#VIRTIO drivers configuration options
+
+#Copyright (c) 2021 Wind River Systems, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig VIRTIO
+	bool "VIRTIO Drivers"
+
+if VIRTIO
+
+config VIRTIO_MMIO
+	bool "Support VIRTIO MMIO transport"
+	help
+	  Enable support for VIRTIO over MMIO
+
+config VIRTIO_SERIAL
+	bool "Support VIRTIO Console device"
+	select SERAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	help
+	  Enable support for VIRTIO Console (serial) device
+
+endif #VIRTIO
