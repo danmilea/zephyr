@@ -157,6 +157,7 @@ typedef void (*virt_set_status)(const struct device*, uint8_t);
 /* actually, should be uint64_t */
 typedef uint32_t (*virt_get_features)(const struct device *dev);
 typedef void (*virt_set_features)(const struct device *dev, uint32_t);
+typedef void (*virt_read_config)(const struct device *dev, uint32_t, void *, int);
 typedef void (*virt_register_device)(const struct device *dev, int, struct virtqueue**);
 typedef struct virtqueue * (*virt_setup_queue)(const struct device *dev, unsigned int, struct virtqueue*, void(*)(void*), void*);
 typedef void (*virt_queue_notify)(const struct device *dev, struct virtqueue*);
@@ -166,6 +167,7 @@ __subsystem struct virtio_driver_api {
     virt_set_status set_status;
     virt_get_features get_features;
     virt_set_features set_features;
+    virt_read_config read_config;
     virt_register_device register_device;
     virt_setup_queue setup_queue;
     virt_queue_notify queue_notify;
@@ -185,6 +187,11 @@ static inline uint8_t virtio_get_status(const struct device *dev)
 static inline void virtio_set_status(const struct device *dev, uint8_t status)
 {
     ((struct virtio_driver_api*)dev->api)->set_status(dev, status);
+}
+
+static inline void virtio_read_config(const struct device *dev, uint32_t offset, void *dst, int len)
+{
+    ((struct virtio_driver_api*)dev->api)->read_config(dev, offset, dst, len);
 }
 
 static inline uint32_t virtio_get_features(const struct device *dev)

@@ -50,6 +50,8 @@ struct virtio_mmio_data {
 #define DEV_DATA(dev) ((struct virtio_mmio_data*)(dev->data))
 #define READ32(dev, offset) sys_read32(DEVICE_MMIO_GET(dev) + offset)
 #define WRITE32(dev, offset, val) sys_write32(val, DEVICE_MMIO_GET(dev) + offset)
+#define READ8(dev, offset) sys_read8(DEVICE_MMIO_GET(dev) + offset)
+#define WRITE8(dev, offset, val) sys_write8(val, DEVICE_MMIO_GET(dev) + offset)
 
 
 static int virtio_mmio_init(const struct device *dev);
@@ -61,10 +63,8 @@ static uint8_t virtio_mmio_get_status(const struct device *dev);
 static void virtio_mmio_set_status(const struct device *dev, uint8_t status);
 static uint32_t virtio_mmio_get_features(const struct device *dev);
 static void virtio_mmio_set_features(const struct device *dev, uint32_t features);
-#if 0 /*TODO*/
 static void virtio_mmio_read_config(const struct device *dev, uint32_t offset,
                                     void *dst, int length);
-#endif
 static void virtio_mmio_register_device(const struct device *dev, int, struct virtqueue**);
 static struct virtqueue * virtio_mmio_setup_virtqueue(const struct device *dev, unsigned int idx,
                                         struct virtqueue *vq, void (*cb)(void *), void *cb_arg);
@@ -77,6 +77,7 @@ static const struct virtio_driver_api virtio_mmio_api = {
   .set_status = virtio_mmio_set_status,
   .get_features = virtio_mmio_get_features,
   .set_features = virtio_mmio_set_features,
+  .read_config = virtio_mmio_read_config,
   .register_device = virtio_mmio_register_device,
   .setup_queue = virtio_mmio_setup_virtqueue,
   .queue_notify = virtio_mmio_virtqueue_notify,
@@ -177,12 +178,14 @@ static void virtio_mmio_set_features(const struct device *dev, uint32_t features
   /*virtio->notify(something,something)*/
 }
 
-#if 0
 static void virtio_mmio_read_config(const struct device *dev, uint32_t offset,
                                     void *dst, int length)
 {
+    int i;
+    uint8_t *d = dst;
+    for (i = 0 ; i < length; i++)
+        d[i] = READ8(dev, MMIO_CONFIG + i);
 }
-#endif
 
 static void virtio_mmio_register_device(const struct device *dev, int vq_num, struct virtqueue** vqs)
 {
