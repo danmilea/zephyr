@@ -128,8 +128,8 @@ struct vring {
 
 #define VRING_DECLARE(name, n, align) \
 /* Not sure if vrings need to be 4096 - aligned */\
-char __vrbuf_##name [VRING_SIZE(n, align)] __aligned(4096); \
-struct vring __vring_##name = {\
+static char __vrbuf_##name [VRING_SIZE(n, align)] __aligned(4096); \
+static struct vring __vring_##name = {\
     .desc = (void*)__vrbuf_##name,\
     .avail = (void*)((unsigned long)__vrbuf_##name + n*sizeof(struct vring_desc)),\
     .used = (void*)((unsigned long)__vrbuf_##name + ((n*sizeof(struct vring_desc) +\
