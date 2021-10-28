@@ -21,4 +21,14 @@ config VIRTIO_SERIAL
 	help
 	  Enable support for VIRTIO Console (serial) device
 
+#QEMU requires a device when enabling networking, to use with -nic
+#which is kinda obsolete and won't support virtio-net-device
+#so we fake it here to pacify the build system
+config ETH_NIC_MODEL
+        string
+        default "e1000"
+        help
+          Tells what Qemu network model to use. This value is given as
+          a parameter to -nic qemu command line option.
+
 endif #VIRTIO
