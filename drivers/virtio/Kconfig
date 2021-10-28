@@ -17,6 +17,7 @@ config VIRTIO_SERIAL
 	bool "Support VIRTIO Console device"
 	select SERAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
+	select RING_BUFFER
 	help
 	  Enable support for VIRTIO Console (serial) device
 
