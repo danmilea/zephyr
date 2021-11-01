@@ -18,6 +18,7 @@
 #define VQIN_SIZE    4
 #define VQOUT_SIZE   4
 
+#define VIRTIO_NET_F_MAC BIT(5)
 struct virtio_net_config {
     const struct device *bus;
     int vq_count;
@@ -25,10 +26,15 @@ struct virtio_net_config {
 };
 
 struct virtio_net_data {
+    uint8_t mac_addr[6];
 };
 
+static void virtio_net_iface_init(struct net_if *iface);
+static int virtio_net_send(const struct device *dev, struct net_pkt *pkt);
 
 static const struct ethernet_api virtio_net_api = {
+    .iface_api.init = virtio_net_iface_init,
+    .send = virtio_net_send,
 };
 
 
@@ -43,15 +49,14 @@ static const struct ethernet_api virtio_net_api = {
         };\
     static struct virtio_net_data virtio_net_data_##inst = {\
     };\
-    ETH_NET_DEVICE_DT_DEFINE(inst,\
+    ETH_NET_DEVICE_DT_INST_DEFINE(inst,\
         virtio_net_init,\
         NULL,\
         &virtio_net_data_##inst,\
         &virtio_net_cfg_##inst,\
         CONFIG_ETH_INIT_PRIORITY,\
         &virtio_net_api,\
-        1514);
-
+        NET_ETH_MTU);
 
 static int virtio_net_init(const struct device *dev)
 {
@@ -71,7 +76,7 @@ static int virtio_net_init(const struct device *dev)
         return -1;
         }
     virtio_set_status(DEV_CFG(dev)->bus, VIRTIO_CONFIG_STATUS_DRIVER);
-    virtio_set_features(DEV_CFG(dev)->bus, 0/*VIRTIO_F_NOTIFY_ON_EMPTY*/);
+    virtio_set_features(DEV_CFG(dev)->bus, VIRTIO_NET_F_MAC/*VIRTIO_F_NOTIFY_ON_EMPTY*/);
     features =virtio_get_features(DEV_CFG(dev)->bus);
     printk("features: %08x\n", features);
 #if 0 //TODO:
@@ -119,7 +124,30 @@ static int virtio_net_init(const struct device *dev)
     for (int i = 0;i < 64; i++)
         printk("%02x  ", buf[i]);
     printk("\n");
+    if (VIRTIO_NET_F_MAC & features)
+        virtio_read_config(DEV_CFG(dev)->bus, 0, DEV_DATA(dev)->mac_addr, 6);
+    else
+        {
+        __ASSERT(0, "should generate a MAC address");
+        }
+
     return 0;
+}
+
+static void virtio_net_iface_init(struct net_if *iface)
+{
+    const struct device *dev = net_if_get_device(iface);
+    printk("%s()\n",__FUNCTION__);
+
+    net_if_set_link_addr(iface, DEV_DATA(dev)->mac_addr, 6, NET_LINK_ETHERNET);
+    ethernet_init(iface);
+    //net_if_flag_set(iface, NET_IF_NO_AUTO_START);
+}
+
+static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
+{
+    printk("%s()\n",__FUNCTION__);
+    return -EIO;
 }
 
 DT_INST_FOREACH_STATUS_OKAY(CREATE_VIRTIO_NET_DEVICE)
