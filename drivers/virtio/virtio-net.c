@@ -41,6 +41,10 @@ struct virtio_net_desc {
     sys_snode_t node;
     struct virtio_net_pkt *pkt;
     uint8_t *data;
+    //TODO: put a semaphore here instead of tx_done_sem
+    //if a thread is scheduled out before enqueue,
+    //we could return from send before the packet is actually
+    //sent
 };
 
 struct virtio_net_config {
@@ -56,11 +60,13 @@ struct virtio_net_data {
     struct virtqueue *vqin, *vqout;
     int hdrsize;
     sys_slist_t tx_free_list;
+    struct k_sem tx_done_sem;
 };
 
 static void virtio_net_iface_init(struct net_if *iface);
 static int virtio_net_send(const struct device *dev, struct net_pkt *pkt);
 
+static void virtio_net_vqin_cb(void *arg);
 static const struct ethernet_api virtio_net_api = {
     .iface_api.init = virtio_net_iface_init,
     .send = virtio_net_send,
@@ -129,8 +135,8 @@ static int virtio_net_init(const struct device *dev)
             DEV_CFG(dev)->bus,
             1,
             DEV_CFG(dev)->vqs[1],
-            NULL,
-            NULL
+            virtio_net_vqin_cb,
+            DEV_DATA(dev)
             );
     if (!DEV_DATA(dev)->vqout)
         return -1;
@@ -153,7 +159,7 @@ static int virtio_net_init(const struct device *dev)
             DEV_CFG(dev)->txdesc[i].data = (uint8_t*)&DEV_CFG(dev)->txbuf[i].hdr.num_buffers;
         sys_slist_append(&DEV_DATA(dev)->tx_free_list, &DEV_CFG(dev)->txdesc[i].node);
         }
-//TODO:
+    k_sem_init(&DEV_DATA(dev)->tx_done_sem, 0, 1);
     virtqueue_notify(DEV_DATA(dev)->vqin);
     virtqueue_notify(DEV_DATA(dev)->vqout);
 
@@ -185,43 +191,58 @@ static void virtio_net_iface_init(struct net_if *iface)
 static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
 {
     sys_snode_t *node;
-    struct virtio_net_desc *desc, *ret;
+    struct virtio_net_desc *desc;
     uint16_t total_len;
+    int key;
+    int ret = -EIO;
 
-    printk("%s()\n",__FUNCTION__);
+    //net_if_tx() checks if pkt is non-NULL
     total_len = net_pkt_get_len(pkt);
-    if (total_len > NET_ETH_MAX_FRAME_SIZE)
+    printk("%s(%d)\n",__FUNCTION__, total_len);
+    if ((total_len > NET_ETH_MAX_FRAME_SIZE) || (total_len == 0))
         {
-        return -EIO;
+        return -EINVAL;
         }
 
-    //TODO: locking
-    if (virtqueue_full(DEV_DATA(dev)->vqout))
-        return -EIO;
-    /*
-     * doing SYS_SLIST_CONTAINER(sys_slist_get(...),...) is a bad idea
-     * first parameter of SYS_SLIST_CONTAINER() is evaluated twice
-     */
+    key = irq_lock();
+    /* VQ callback can't access the free list if interrupts are locked */
     node = sys_slist_get(&DEV_DATA(dev)->tx_free_list);
+    irq_unlock(key);
+    if (!node)
+        return ret;
     desc = SYS_SLIST_CONTAINER(node, desc, node);
-    if (!desc)
-        return -EIO;
     memset(&desc->pkt->hdr, 0, sizeof(desc->pkt->hdr));
-    if (net_pkt_read(pkt, desc->data , total_len))
+    if (net_pkt_read(pkt, desc->data, total_len))
         {
             printk("Failed to read packet into buffer");
-            sys_slist_append(&DEV_DATA(dev)->tx_free_list, &desc->node);
-            return -EIO;
+            goto recycle;
         }
-    virtqueue_enqueue_buf(DEV_DATA(dev)->vqout, (void*)desc, 0, (char*)desc->pkt, total_len + DEV_DATA(dev)->hdrsize);
+    /* should not happen, VQ size == desc count and we use one VQ entry per desc, maybe __ASSERT() */
+    /* maybe when doin scatter-gather this will change */
+    if (virtqueue_enqueue_buf(DEV_DATA(dev)->vqout, (void*)desc, 0, (char*)desc->pkt, total_len + DEV_DATA(dev)->hdrsize))
+        goto recycle;
     virtqueue_notify(DEV_DATA(dev)->vqout);
-    //polling for now
-    do {
-        ret = virtqueue_dequeue_buf(DEV_DATA(dev)->vqout, NULL);
-        } while(!ret);
-    __ASSERT(ret == desc, "whose buffer is this?");
-    sys_slist_append(&DEV_DATA(dev)->tx_free_list, &ret->node);
+    k_sem_take(&DEV_DATA(dev)->tx_done_sem,K_FOREVER);
     return 0;
+
+recycle:
+    key = irq_lock();
+    /* VQ callback can't access the free list if interrupts are locked */
+    sys_slist_append(&DEV_DATA(dev)->tx_free_list, &desc->node);
+    irq_unlock(key);
+    return ret;
+}
+
+static void virtio_net_vqin_cb(void *arg)
+{
+    struct virtio_net_data *pdata = arg;
+    struct virtio_net_desc *desc;
+    while ((desc = virtqueue_dequeue_buf(pdata->vqout, NULL)))
+        {
+        printk("%s() dequeued %p\n", __FUNCTION__, desc);
+        sys_slist_append(&pdata->tx_free_list, &desc->node);
+        k_sem_give(&pdata->tx_done_sem);
+        }
 }
 
 DT_INST_FOREACH_STATUS_OKAY(CREATE_VIRTIO_NET_DEVICE)
