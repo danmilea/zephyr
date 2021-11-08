@@ -28,12 +28,11 @@ config VIRTIO_NETWORK
 
 if VIRTIO_NETWORK
 
-#QEMU requires a device when enabling networking, to use with -nic
-#which is kinda obsolete and won't support virtio-net-device
-#so we fake it here to pacify the build system
+#TODO: if virtio-pci is ever supported, we need some parameter to enable
+#the correct virtio-net model here
 config ETH_NIC_MODEL
         string
-        default "e1000"
+        default "virtio-net-device"
         help
           Tells what Qemu network model to use. This value is given as
           a parameter to -nic qemu command line option.
