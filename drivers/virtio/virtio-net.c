@@ -13,6 +13,7 @@
 
 #define DT_DRV_COMPAT virtio_net
 
+#define printk(...) do {} while(0)
 #define DEV_CFG(dev) ((struct virtio_net_config*)(dev->config))
 #define DEV_DATA(dev) ((struct virtio_net_data*)(dev->data))
 
