@@ -2,7 +2,6 @@
 
 cmake_minimum_required(VERSION 3.13.1)
 
-list(APPEND QEMU_EXTRA_FLAGS -netdev type=user,id=net0 -device virtio-net-device,netdev=net0)
 list(APPEND QEMU_EXTRA_FLAGS -device virtio-serial-device)
 list(APPEND QEMU_EXTRA_FLAGS -chardev socket,path=/tmp/foo,server=on,wait=off,id=foo)
 list(APPEND QEMU_EXTRA_FLAGS -device virtconsole,chardev=foo)
