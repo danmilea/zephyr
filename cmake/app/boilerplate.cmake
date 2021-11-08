@@ -628,11 +628,17 @@ if(CONFIG_QEMU_TARGET)
       set(NET_QEMU_ETH_EXTRA_ARGS ",${CONFIG_ETH_QEMU_EXTRA_ARGS}")
     endif()
     list(APPEND QEMU_FLAGS_${ARCH}
-      -nic tap,model=${CONFIG_ETH_NIC_MODEL},script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
+      -netdev type=tap,id=net0,script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
+    )
+    list(APPEND QEMU_FLAGS_${ARCH}
+      -device ${CONFIG_ETH_NIC_MODEL},netdev=net0
     )
   elseif(CONFIG_NET_QEMU_USER)
     list(APPEND QEMU_FLAGS_${ARCH}
-      -nic user,model=${CONFIG_ETH_NIC_MODEL},${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
+      -netdev type=user,id=net0,${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
+    )
+    list(APPEND QEMU_FLAGS_${ARCH}
+      -device ${CONFIG_ETH_NIC_MODEL},netdev=net0
     )
   else()
     list(APPEND QEMU_FLAGS_${ARCH}
