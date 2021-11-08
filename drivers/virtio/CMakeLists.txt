@@ -5,5 +5,4 @@ zephyr_library()
 zephyr_library_sources(virtio.c)
 zephyr_library_sources_ifdef(CONFIG_VIRTIO_MMIO virtio-mmio.c)
 zephyr_library_sources_ifdef(CONFIG_VIRTIO_SERIAL virtio-serial.c)
-#TODO: ifdef
-zephyr_library_sources(virtio-net.c)
+zephyr_library_sources_ifdef(CONFIG_VIRTIO_NETWORK virtio-net.c)

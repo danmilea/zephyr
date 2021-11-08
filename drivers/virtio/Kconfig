@@ -15,11 +15,18 @@ config VIRTIO_MMIO
 
 config VIRTIO_SERIAL
 	bool "Support VIRTIO Console device"
-	select SERAL_HAS_DRIVER
+	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
 	select RING_BUFFER
 	help
 	  Enable support for VIRTIO Console (serial) device
+
+config VIRTIO_NETWORK
+	bool "Support VIRTIO Network device"
+	help
+	  Enable support for VIRTIO Network device
+
+if VIRTIO_NETWORK
 
 #QEMU requires a device when enabling networking, to use with -nic
 #which is kinda obsolete and won't support virtio-net-device
@@ -30,5 +37,7 @@ config ETH_NIC_MODEL
         help
           Tells what Qemu network model to use. This value is given as
           a parameter to -nic qemu command line option.
+
+endif #VIRTIO_NETWORK
 
 endif #VIRTIO
