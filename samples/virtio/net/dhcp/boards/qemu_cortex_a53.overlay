@@ -1,0 +1,26 @@
+/{
+	virtio_mmio@a003e00 {
+		status = "okay";
+		label = "virtio0";
+		virtio0: network {
+		label = "virt-net";
+		compatible = "virtio-net";
+		};
+	};
+
+	virtio_mmio@a003c00 {
+		status = "okay";
+		label = "virtio1";
+		virtio1: serial {
+		label = "virt-serial";
+		compatible = "virtio-serial";
+		};
+	};
+
+
+	chosen {
+//		zephyr,console = &virtio1;
+//		zephyr,shell-uart = &virtio1;
+	};
+
+};
