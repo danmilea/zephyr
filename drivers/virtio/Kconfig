@@ -21,6 +21,12 @@ config VIRTIO_SERIAL
 	help
 	  Enable support for VIRTIO Console (serial) device
 
+config VIRTIO_RNG
+	bool "Support VIRTIO Entropy device"
+	select ENTROPY_HAS_DRIVER
+	help
+	  Enable support for VIRTIO Entropy device
+
 config VIRTIO_NETWORK
 	bool "Support VIRTIO Network device"
 	help
