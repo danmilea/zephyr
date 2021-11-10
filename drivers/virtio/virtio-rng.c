@@ -12,6 +12,7 @@
 #include <drivers/entropy.h>
 
 #define DT_DRV_COMPAT virtio_rng
+#define printk(...) do {} while(0)
 
 #define VQIN_SIZE 2
 
