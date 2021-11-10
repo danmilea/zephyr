@@ -1,0 +1,16 @@
+/{
+	virtio_mmio@a003e00 {
+		status = "okay";
+		label = "virtio0";
+		virtio0: rng {
+		label = "virt-rng";
+		compatible = "virtio-rng";
+		};
+	};
+
+
+	chosen {
+		zephyr,entropy = &virtio0;
+	};
+
+};
