@@ -34,6 +34,10 @@ config VIRTIO_NETWORK
 
 if VIRTIO_NETWORK
 
+module = VIRTIO_NET
+module-str = virtio-net
+source "subsys/logging/Kconfig.template.log_config"
+
 #TODO: if virtio-pci is ever supported, we need some parameter to enable
 #the correct virtio-net model here
 config ETH_NIC_MODEL

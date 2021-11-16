@@ -10,10 +10,13 @@
 #include <drivers/virtio/virtio.h>
 #include <net/ethernet.h>
 #include <sys/slist.h>
+#include <logging/log.h>
 
 #define DT_DRV_COMPAT virtio_net
 
-#define printk(...) do {} while(0)
+#define LOG_MODULE_NAME virtio_net
+LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
+
 #define DEV_CFG(dev) ((struct virtio_net_config*)(dev->config))
 #define DEV_DATA(dev) ((struct virtio_net_data*)(dev->data))
 
@@ -50,6 +53,7 @@ struct virtio_net_desc {
 
 struct virtio_net_config {
     const struct device *bus;
+    LOG_INSTANCE_PTR_DECLARE(log);
     int vq_count;
     struct virtqueue **vqs;
     struct virtio_net_pkt *txbuf;
@@ -59,6 +63,7 @@ struct virtio_net_config {
 };
 
 struct virtio_net_data {
+    const struct device *dev;
     struct net_if *iface;
     uint8_t mac_addr[6];
     struct virtqueue *vqin, *vqout;
@@ -82,6 +87,7 @@ static const struct ethernet_api virtio_net_api = {
 
 
 #define CREATE_VIRTIO_NET_DEVICE(inst) \
+    LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_NET_LOG_LEVEL);\
     static struct virtio_net_pkt rxbuf_##inst[VQIN_SIZE];\
     static struct virtio_net_desc rxdesc_##inst[VQIN_SIZE];\
     static struct virtio_net_pkt txbuf_##inst[VQOUT_SIZE];\
@@ -91,6 +97,7 @@ static const struct ethernet_api virtio_net_api = {
     static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst), VQ_PTR(vq1_##inst)};\
     static const struct virtio_net_config virtio_net_cfg_##inst = {\
         .bus = DEVICE_DT_GET(DT_BUS(DT_INST(inst, DT_DRV_COMPAT))),\
+        LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, inst)\
         .vq_count = 2,\
         .vqs = &vq_list_##inst[0],\
         .rxbuf = rxbuf_##inst,\
@@ -114,22 +121,25 @@ static int virtio_net_init(const struct device *dev)
     uint32_t devid, features;
     int i;
 
-    printk("%s()\n",__FUNCTION__);
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p)\n", dev);
 
     __ASSERT(DEV_CFG(dev)->bus != NULL, "DEV_CFG(dev)->bus != NULL");
     if (!device_is_ready(DEV_CFG(dev)->bus))
         return -1;
-    printk("bus %p\n", DEV_CFG(dev)->bus);
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "bus %p\n", DEV_CFG(dev)->bus);
     devid = virtio_get_devid(DEV_CFG(dev)->bus);
     if (devid != VIRTIO_ID_NETWORK)
         {
-        printk("Bad devid %08x\n", devid);
+        LOG_INST_ERR(DEV_CFG(dev)->log, "Expected devid %04x, got %04x\n", VIRTIO_ID_NETWORK, devid);
         return -1;
         }
+    DEV_DATA(dev)->dev = dev;
     virtio_set_status(DEV_CFG(dev)->bus, VIRTIO_CONFIG_STATUS_DRIVER);
     virtio_set_features(DEV_CFG(dev)->bus, VIRTIO_NET_F_MAC/*VIRTIO_F_NOTIFY_ON_EMPTY*/);
     features =virtio_get_features(DEV_CFG(dev)->bus);
-    printk("features: %08x\n", features);
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "features: %08x\n", features);
 
     DEV_DATA(dev)->vqin =
         virtio_setup_virtqueue(
@@ -163,7 +173,7 @@ static int virtio_net_init(const struct device *dev)
     sys_slist_init(&DEV_DATA(dev)->rx_free_list);
     for (i = 0; i < VQIN_SIZE; i++)
         {
-        printk("rx %d at %p\n",i,&DEV_CFG(dev)->rxdesc[i]);
+        LOG_INST_DBG(DEV_CFG(dev)->log, "rx %d at %p\n",i,&DEV_CFG(dev)->rxdesc[i]);
         DEV_CFG(dev)->rxdesc[i].pkt = &DEV_CFG(dev)->rxbuf[i];
         if (features & VIRTIO_NET_F_MRG_RXBUF)
             DEV_CFG(dev)->rxdesc[i].data = DEV_CFG(dev)->rxbuf[i].pkt;
@@ -175,7 +185,7 @@ static int virtio_net_init(const struct device *dev)
     sys_slist_init(&DEV_DATA(dev)->tx_free_list);
     for (i = 0; i < VQOUT_SIZE; i++)
         {
-        printk("tx %d at %p\n",i,&DEV_CFG(dev)->txdesc[i]);
+        LOG_INST_DBG(DEV_CFG(dev)->log, "tx %d at %p\n",i,&DEV_CFG(dev)->txdesc[i]);
         DEV_CFG(dev)->txdesc[i].pkt = &DEV_CFG(dev)->txbuf[i];
         if (features & VIRTIO_NET_F_MRG_RXBUF)
             DEV_CFG(dev)->txdesc[i].data = DEV_CFG(dev)->txbuf[i].pkt;
@@ -187,11 +197,6 @@ static int virtio_net_init(const struct device *dev)
     virtqueue_notify(DEV_DATA(dev)->vqin);
     virtqueue_notify(DEV_DATA(dev)->vqout);
 
-    char buf[64];
-    virtio_read_config(DEV_CFG(dev)->bus, 0, buf, 64);
-    for (int i = 0;i < 64; i++)
-        printk("%02x  ", buf[i]);
-    printk("\n");
     if (VIRTIO_NET_F_MAC & features)
         virtio_read_config(DEV_CFG(dev)->bus, 0, DEV_DATA(dev)->mac_addr, 6);
     else
@@ -205,7 +210,8 @@ static int virtio_net_init(const struct device *dev)
 static void virtio_net_iface_init(struct net_if *iface)
 {
     const struct device *dev = net_if_get_device(iface);
-    printk("%s()\n",__FUNCTION__);
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p)\n", iface);
 
     DEV_DATA(dev)->iface = iface;
     net_if_set_link_addr(iface, DEV_DATA(dev)->mac_addr, 6, NET_LINK_ETHERNET);
@@ -223,7 +229,7 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
 
     //net_if_tx() checks if pkt is non-NULL
     total_len = net_pkt_get_len(pkt);
-    printk("%s(%d)\n",__FUNCTION__, total_len);
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%d)\n", total_len);
     if ((total_len > NET_ETH_MAX_FRAME_SIZE) || (total_len == 0))
         {
         return -EINVAL;
@@ -236,10 +242,11 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     if (!node)
         return ret;
     desc = SYS_SLIST_CONTAINER(node, desc, node);
+    LOG_INST_DBG(DEV_CFG(dev)->log, "desc=%p\n", desc);
     memset(&desc->pkt->hdr, 0, sizeof(desc->pkt->hdr));
     if (net_pkt_read(pkt, desc->data, total_len))
         {
-            printk("Failed to read packet into buffer");
+            LOG_INST_WRN(DEV_CFG(dev)->log, "Failed to read packet into buffer");
             goto recycle;
         }
     /* should not happen, VQ size == desc count and we use one VQ entry per desc, maybe __ASSERT() */
@@ -264,7 +271,7 @@ static void virtio_net_vqout_cb(void *arg)
     struct virtio_net_desc *desc;
     while ((desc = virtqueue_dequeue_buf(pdata->vqout, NULL)))
         {
-        printk("%s() dequeued %p\n", __FUNCTION__, desc);
+        LOG_INST_DBG(DEV_CFG(pdata->dev)->log, "dequeued %p\n", desc);
         sys_slist_append(&pdata->tx_free_list, &desc->node);
         k_sem_give(&pdata->tx_done_sem);
         }
@@ -280,18 +287,18 @@ static void virtio_net_vqin_cb(void *arg)
     while ((desc = virtqueue_dequeue_buf(DEV_DATA(dev)->vqin, &length)))
         {
         length -= DEV_DATA(dev)->hdrsize;
-        printk("%s() dequeued %p len=%d\n", __FUNCTION__, desc, length);
+        LOG_INST_DBG(DEV_CFG(dev)->log, "dequeued %p len=%d\n", desc, length);
         pkt = net_pkt_rx_alloc_with_buffer(DEV_DATA(dev)->iface, length, AF_UNSPEC, 0, K_NO_WAIT);
         if (pkt == NULL)
             {
-            printk("packet allocation failure");
+            LOG_INST_WRN(DEV_CFG(dev)->log, "packet allocation failure");
             }
         else
             {
             net_pkt_write(pkt, desc->data, length);
             if (net_recv_data(DEV_DATA(dev)->iface, pkt) < 0)
                 {
-                printk("net_recv_data() failed");
+                LOG_INST_WRN(DEV_CFG(dev)->log, "net_recv_data() failed");
                 net_pkt_unref(pkt);
                 }
             }
