@@ -10,9 +10,12 @@
 #include <device.h>
 #include <drivers/virtio/virtio.h>
 #include <drivers/entropy.h>
+#include <logging/log.h>
 
 #define DT_DRV_COMPAT virtio_rng
-#define printk(...) do {} while(0)
+
+#define LOG_MODULE_NAME virtio_rng
+LOG_LEVEL_SET(CONFIG_VIRTIO_RNG_LOG_LEVEL);
 
 #define VQIN_SIZE 2
 
@@ -21,6 +24,7 @@
 
 struct virtio_rng_config {
     const struct device *bus;
+    LOG_INSTANCE_PTR_DECLARE(log);
     int vq_count;
     struct virtqueue **vqs;
 };
@@ -34,21 +38,23 @@ static int virtio_rng_init(const struct device *dev)
     uint32_t devid, features;
 
     printk("%s()\n",__FUNCTION__);
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p)\n", dev);
 
     __ASSERT(DEV_CFG(dev)->bus != NULL, "DEV_CFG(dev)->bus != NULL");
     if (!device_is_ready(DEV_CFG(dev)->bus))
         return -1;
-    printk("bus %p\n", DEV_CFG(dev)->bus);
+    LOG_INST_DBG(DEV_CFG(dev)->log, "bus %p\n", DEV_CFG(dev)->bus);
     devid = virtio_get_devid(DEV_CFG(dev)->bus);
     if (devid != VIRTIO_ID_ENTROPY)
         {
-        printk("Bad devid %08x\n", devid);
+        LOG_INST_ERR(DEV_CFG(dev)->log, "Expected devid %04x, got %04x\n", VIRTIO_ID_ENTROPY, devid);
         return -1;
         }
     virtio_set_status(DEV_CFG(dev)->bus, VIRTIO_CONFIG_STATUS_DRIVER);
     virtio_set_features(DEV_CFG(dev)->bus, 0/*VIRTIO_F_NOTIFY_ON_EMPTY*/);
     features =virtio_get_features(DEV_CFG(dev)->bus);
-    printk("features: %08x\n", features);
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "features: %08x\n", features);
 
     DEV_DATA(dev)->vqin =
         virtio_setup_virtqueue(
@@ -86,6 +92,9 @@ static int virtio_rng_get_entropy_internal(const struct device *dev, uint8_t *bu
 static int virtio_rng_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
 {
     int key, ret;
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p, %d)\n", buffer, length);
+
     key = irq_lock();
     ret = virtio_rng_get_entropy_internal(dev, buffer, length);
     irq_unlock(key);
@@ -95,9 +104,12 @@ static int virtio_rng_get_entropy(const struct device *dev, uint8_t *buffer, uin
 static int virtio_rng_get_entropy_isr(const struct device *dev, uint8_t *buffer, uint16_t length, uint32_t flags)
 {
     int key, ret;
+
+    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p, %d, %08x)\n", buffer, length, flags);
+
     ret = virtio_rng_get_entropy_internal(dev, buffer, length);
     if (!ret)
-        return length;
+        ret = length;
     return ret;
 }
 
@@ -107,10 +119,12 @@ static const struct entropy_driver_api virtio_rng_api = {
 };
 
 #define CREATE_VIRTIO_RNG_DEVICE(inst) \
+    LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_RNG_LOG_LEVEL);\
     VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
     static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst)};\
     static const struct virtio_rng_config virtio_rng_cfg_##inst = {\
         .bus = DEVICE_DT_GET(DT_BUS(DT_INST(inst, DT_DRV_COMPAT))),\
+        LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, inst)\
         .vq_count = 1,\
         .vqs = &vq_list_##inst[0],\
         };\

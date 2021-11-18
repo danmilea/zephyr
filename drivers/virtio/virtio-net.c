@@ -271,7 +271,9 @@ static void virtio_net_vqout_cb(void *arg)
     struct virtio_net_desc *desc;
     while ((desc = virtqueue_dequeue_buf(pdata->vqout, NULL)))
         {
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(pdata->dev)->log, "dequeued %p\n", desc);
+#endif
         sys_slist_append(&pdata->tx_free_list, &desc->node);
         k_sem_give(&pdata->tx_done_sem);
         }
@@ -287,18 +289,24 @@ static void virtio_net_vqin_cb(void *arg)
     while ((desc = virtqueue_dequeue_buf(DEV_DATA(dev)->vqin, &length)))
         {
         length -= DEV_DATA(dev)->hdrsize;
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(dev)->log, "dequeued %p len=%d\n", desc, length);
+#endif
         pkt = net_pkt_rx_alloc_with_buffer(DEV_DATA(dev)->iface, length, AF_UNSPEC, 0, K_NO_WAIT);
         if (pkt == NULL)
             {
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
             LOG_INST_WRN(DEV_CFG(dev)->log, "packet allocation failure");
+#endif
             }
         else
             {
             net_pkt_write(pkt, desc->data, length);
             if (net_recv_data(DEV_DATA(dev)->iface, pkt) < 0)
                 {
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
                 LOG_INST_WRN(DEV_CFG(dev)->log, "net_recv_data() failed");
+#endif
                 net_pkt_unref(pkt);
                 }
             }

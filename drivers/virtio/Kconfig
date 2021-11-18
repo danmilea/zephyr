@@ -27,6 +27,14 @@ config VIRTIO_RNG
 	help
 	  Enable support for VIRTIO Entropy device
 
+if VIRTIO_RNG
+
+module = VIRTIO_RNG
+module-str = virtio-rng
+source "subsys/logging/Kconfig.template.log_config"
+
+endif #VIRTIO_RNG
+
 config VIRTIO_NETWORK
 	bool "Support VIRTIO Network device"
 	help
