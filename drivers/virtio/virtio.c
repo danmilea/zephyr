@@ -43,7 +43,7 @@ int virtqueue_enqueue_buf(struct virtqueue *vq, void *cookie, int writable, char
     __ASSERT(vq, "NULL vq");
     __ASSERT(cookie, "NULL cookie");
     if (vq->vq_free_cnt == 0)
-        return (ENOSPC);
+        return (-ENOSPC);
     head_idx = vq->vq_desc_head_idx;
     dxp = &vq->vq_descx[head_idx];
     __ASSERT(dxp->cookie == NULL, "cookie already exists");
