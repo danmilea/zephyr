@@ -23,8 +23,12 @@
   #define ROMABLE_REGION FLASH
   #define RAMABLE_REGION SRAM
 #else
+#if !defined(ROMABLE_REGION)
   #define ROMABLE_REGION SRAM
+#endif
+#if !defined(RAMABLE_REGION)
   #define RAMABLE_REGION SRAM
+#endif
 #endif
 
 #if !defined(CONFIG_XIP) && (CONFIG_FLASH_SIZE == 0)

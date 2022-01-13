@@ -44,7 +44,11 @@ static const struct arm_mpu_region mpu_regions[] = {
 
 	MPU_REGION_ENTRY("SRAM_PRIV",
 			0x00000000,
+#ifndef RSLD
 			REGION_64M,
+#else
+			REGION_2G,
+#endif
 			MPUTYPE_PRIV_WBWACACHE),
 
 	MPU_REGION_ENTRY("SRAM",

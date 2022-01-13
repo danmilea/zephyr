@@ -48,5 +48,10 @@ void __weak sys_clock_disable(void)
 {
 }
 
+#ifndef RSLD
 SYS_DEVICE_DEFINE("sys_clock", sys_clock_driver_init, sys_clock_device_ctrl,
 		PRE_KERNEL_2, CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);
+#else /* RSLD */
+SYS_DEVICE_DEFINE("sys_clock", sys_clock_driver_init, sys_clock_device_ctrl,
+		PRE_KERNEL_1, 41);
+#endif /* RSLD */
