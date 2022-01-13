@@ -1,0 +1,68 @@
+/{
+
+	soc {
+		uart1: uart@ff010000 {
+			compatible = "xlnx,xuartps";
+			reg = <0xff010000 0x4c>;
+			status = "disabled";
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_1";
+			label = "UART_1";
+		};
+		rpu_0_ipi@ff310000 {
+			compatible = "xlnx,zynqmp_ipi";
+			label = "rpu_0_ipi";
+			reg = < 0xff310000 0x1000 >;
+			interrupts = < GIC_SPI 33 IRQ_TYPE_LEVEL
+						IRQ_DEFAULT_PRIORITY>;
+			status = "okay";
+		};
+	};
+	virtio_mmio@77000000 {
+		dma-coherent;
+		interrupt-parent = < &gic >;
+		interrupts = < 0x0 0x2f 0x1 0x0 >;
+		reg = < 0x77000000 0x200 >;
+		compatible = "virtio,mmio";
+		status = "okay";
+		label = "virtio0";
+		virtio0: rng {
+			label = "virt-rng";
+			compatible = "virtio-rng";
+		};
+	};
+	virtio_mmio@77000200 {
+		dma-coherent;
+		interrupt-parent = < &gic >;
+		interrupts = < 0x0 0x30 0x1 0x0 >;
+		reg = < 0x77000200 0x200 >;
+		compatible = "virtio,mmio";
+		status = "okay";
+		label = "virtio1";
+		virtio1: network {
+			label = "virt-net";
+			compatible = "virtio-net";
+		};
+	};
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+		zephyr,entropy = &virtio0;
+	};
+};
+
+&uart1 {
+	status = "okay";
+	current-speed = <115200>;
+	clock-frequency = <99999901>;
+};
+
+/delete-node/ &uart0;
+/delete-node/ &gem0;
+/delete-node/ &gem1;
+/delete-node/ &gem2;
+/delete-node/ &gem3;
+
+
+
