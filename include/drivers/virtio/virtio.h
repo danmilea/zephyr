@@ -61,6 +61,9 @@ extern "C" {
 struct vring;
 struct virtqueue {
     const struct device *vq_dev;
+#ifdef RSLD
+    sys_slist_t bb_list;
+#endif
     uint16_t vq_queue_index;
     uint16_t vq_nentries;
     struct vring *vq_ring;
@@ -143,6 +146,7 @@ struct vring {
     sizeof(struct vring_used) + \
     sizeof(struct vring_used_elem) * n + sizeof(uint16_t)
 
+#ifndef RSLD
 #define VRING_DECLARE(name, n, align) \
 /* Not sure if vrings need to be 4096 - aligned */\
 static char __vrbuf_##name [VRING_SIZE(n, align)] __aligned(4096); \
@@ -152,6 +156,17 @@ static struct vring __vring_##name = {\
     .used = (void*)((unsigned long)__vrbuf_##name + ((n*sizeof(struct vring_desc) +\
         (n + 1)* sizeof(uint16_t) + align - 1) &~(align - 1))),\
 };
+#else /* vring in its own section */
+#define VRING_DECLARE(name, n, align) \
+/* Not sure if vrings need to be 4096 - aligned */\
+static char __vrbuf_##name [VRING_SIZE(n, align)] __aligned(4096) __attribute((__section__(".shared.vring."#name))); \
+static struct vring __vring_##name = {\
+    .desc = (void*)__vrbuf_##name,\
+    .avail = (void*)((unsigned long)__vrbuf_##name + n*sizeof(struct vring_desc)),\
+    .used = (void*)((unsigned long)__vrbuf_##name + ((n*sizeof(struct vring_desc) +\
+        (n + 1)* sizeof(uint16_t) + align - 1) &~(align - 1))),\
+};
+#endif /* vring in its own section */
 
 /**
  * @endcond

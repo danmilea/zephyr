@@ -31,6 +31,18 @@
  */
 
 #include <drivers/virtio/virtio.h>
+#include <string.h>
+
+#ifdef RSLD
+typedef struct {
+    sys_snode_t node;
+    void *cookie;
+    uint64_t addr; //virtual address
+    uint32_t len;
+} bounce_buf_t;
+
+extern struct k_heap shmem_k_heap;
+#endif
 
 int virtqueue_enqueue_buf(struct virtqueue *vq, void *cookie, int writable, char *buffer, unsigned int len)
 {
@@ -63,6 +75,24 @@ int virtqueue_enqueue_buf(struct virtqueue *vq, void *cookie, int writable, char
     avail_idx = vq->vq_ring->avail->idx;
     avail_ring_idx = avail_idx & (vq->vq_nentries - 1);
     vq->vq_ring->avail->ring[avail_ring_idx] = head_idx;
+
+#ifdef RSLD
+    bounce_buf_t *bb = NULL;
+    char *buf = k_heap_alloc(&shmem_k_heap, len, K_NO_WAIT);
+    if (buf != NULL) {
+        memcpy(buf, buffer, len);
+        dp->addr = Z_MEM_PHYS_ADDR((uintptr_t)buf);
+        bb = k_heap_alloc(&shmem_k_heap, sizeof(bounce_buf_t), K_NO_WAIT);
+        if (bb != NULL) {
+            bb->addr = (uintptr_t)buffer;
+            bb->len = len;
+            bb->cookie = cookie;
+            sys_slist_append(&vq->bb_list, &bb->node);
+        } else {
+            k_heap_free(&shmem_k_heap, buf);
+        }
+    }
+#endif
     __DMB();
     vq->vq_ring->avail->idx = avail_idx + 1;
     vq->vq_queued_cnt++;
@@ -96,6 +126,24 @@ void *virtqueue_dequeue_buf(struct virtqueue *vq, uint32_t *len)
     __ASSERT(cookie != NULL, "no cookie");
     vq->vq_descx[desc_idx].cookie = NULL;
 
+#ifdef RSLD
+    bounce_buf_t *bb = NULL;
+    sys_snode_t *node_l = NULL;
+
+    if (!sys_slist_is_empty(&vq->bb_list)) {
+        SYS_SLIST_ITERATE_FROM_NODE(&vq->bb_list, node_l) {
+            bb = (bounce_buf_t *)node_l;
+            if (bb->cookie == cookie) {
+                memcpy((void *)(uintptr_t)bb->addr, (void *)(uintptr_t)(Z_MEM_VIRT_ADDR(dp->addr)), dp->len);
+                sys_slist_find_and_remove(&vq->bb_list, node_l);
+                k_heap_free(&shmem_k_heap, bb);
+                k_heap_free(&shmem_k_heap, (void *)(uintptr_t)(Z_MEM_VIRT_ADDR(dp->addr)));
+                break;
+            }
+        }
+    }
+#endif
+
     return cookie;
 }
 
@@ -107,6 +155,9 @@ void virtqueue_init(const struct device *dev, unsigned int idx, struct virtqueue
 
     __ASSERT(!(vq->vq_nentries&(vq->vq_nentries - 1)), "Bad queue size");
     vq->vq_dev = dev;
+#ifdef RSLD
+    sys_slist_init(&vq->bb_list);
+#endif
     vq->cb = cb;
     vq->cb_arg = cb_arg;
     vq->vq_queue_index = idx;
