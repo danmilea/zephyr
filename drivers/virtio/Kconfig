@@ -48,12 +48,12 @@ source "subsys/logging/Kconfig.template.log_config"
 
 #TODO: if virtio-pci is ever supported, we need some parameter to enable
 #the correct virtio-net model here
-config ETH_NIC_MODEL
+config ETH_DEVICE
         string
         default "virtio-net-device"
         help
           Tells what Qemu network model to use. This value is given as
-          a parameter to -nic qemu command line option.
+          a parameter to -device qemu command line option.
 
 endif #VIRTIO_NETWORK
 
