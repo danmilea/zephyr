@@ -618,7 +618,7 @@ include(${BOARD_DIR}/board.cmake OPTIONAL)
 # The Qemu supported ethernet driver should define CONFIG_ETH_NIC_MODEL
 # string that tells what nic model Qemu should use.
 if(CONFIG_QEMU_TARGET)
-  if ((CONFIG_NET_QEMU_ETHERNET OR CONFIG_NET_QEMU_USER) AND NOT CONFIG_ETH_NIC_MODEL)
+  if ((CONFIG_NET_QEMU_ETHERNET OR CONFIG_NET_QEMU_USER) AND NOT (CONFIG_ETH_NIC_MODEL OR CONFIG_ETH_DEVICE))
     message(FATAL_ERROR "
       No Qemu ethernet driver configured!
       Enable Qemu supported ethernet driver like e1000 at drivers/ethernet"
@@ -627,19 +627,31 @@ if(CONFIG_QEMU_TARGET)
     if(CONFIG_ETH_QEMU_EXTRA_ARGS)
       set(NET_QEMU_ETH_EXTRA_ARGS ",${CONFIG_ETH_QEMU_EXTRA_ARGS}")
     endif()
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -netdev type=tap,id=net0,script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
-    )
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -device ${CONFIG_ETH_NIC_MODEL},netdev=net0
-    )
+    if (CONFIG_ETH_DEVICE)
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -netdev type=tap,id=net0,script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
+        )
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -device ${CONFIG_ETH_DEVICE},netdev=net0
+        )
+    else()
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -nic tap,model=${CONFIG_ETH_NIC_MODEL},script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
+        )
+    endif()
   elseif(CONFIG_NET_QEMU_USER)
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -netdev type=user,id=net0,${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
-    )
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -device ${CONFIG_ETH_NIC_MODEL},netdev=net0
-    )
+    if (CONFIG_ETH_DEVICE)
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -netdev type=user,id=net0,${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
+        )
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -device ${CONFIG_ETH_DEVICE},netdev=net0
+        )
+    else()
+        list(APPEND QEMU_FLAGS_${ARCH}
+          -nic user,model=${CONFIG_ETH_NIC_MODEL},${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
+        )
+    endif()
   else()
     list(APPEND QEMU_FLAGS_${ARCH}
       -net none
