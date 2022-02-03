@@ -45,6 +45,7 @@
 #define ZEPHYR_INCLUDE_DRIVERS_DRIVERS_VIRTIO_H_
 
 #include <device.h>
+#include <net/net_ip.h>
 #include "virtio_config.h"
 #include "virtio_ids.h"
 
@@ -83,6 +84,7 @@ struct virtqueue {
     /* Not doing indirect descriptors */
     struct vq_desc_extra {
         void *cookie;
+        uint16_t ndescs;
     } vq_descx[0];
 };
 
@@ -361,6 +363,24 @@ static inline void virtqueue_notify(struct virtqueue *vq)
 extern int virtqueue_enqueue_buf(struct virtqueue *vq, void *cookie, int writable, char *buffer, unsigned int len);
 
 /**
+ * @brief Enqueues a transaction on a virtqueue.
+ *
+ * @param[in] vq Pointer to virtqueue structure.
+ * @param[in] cookie Pointer to be returned on dequeue. Cannot be NULL.
+ * @param[in] iov struct iovec array containing buffers to be transferred. Cannot be NULL.
+ * @param[in] readable Indicates how many buffers the device must read.
+ * @param[in] writable Indicates how many buffers the device can write.
+ *
+ * @return 0 on success.
+ * @return -ENOSPC if queue is full.
+ * @return -EMSGSIZE if the buffers can't fit in the queue.
+ * @return -EINVAL if both readable and writable are zero (no buffers to transfer).
+ */
+
+extern int virtqueue_enqueue(struct virtqueue *vq, void *cookie, struct iovec *iov, size_t readable, size_t writable);
+
+#if 0
+/**
  * @brief Dequeues a single buffer from a virtqueue.
  *
  * @param[in] vq Pointer to virtqueue structure.
@@ -371,6 +391,20 @@ extern int virtqueue_enqueue_buf(struct virtqueue *vq, void *cookie, int writabl
  */
 
 extern void *virtqueue_dequeue_buf(struct virtqueue *vq, uint32_t *len);
+#endif
+
+/**
+ * @brief Dequeues data from a virtqueue.
+ *
+ * @param[in] vq Pointer to virtqueue structure.
+ * @param[out] len Pointer to length of transferred data. Can be NULL.
+ *
+ * @return cookie parameter to virtqueue_enqueue_buf()/virtqueue_enqueue()
+ * if a buffer is available.
+ * @return NULL if there is no buffer available.
+ */
+
+extern void *virtqueue_dequeue(struct virtqueue *vq, uint32_t *len);
 
 /**
  * @brief Test if a virtqueue is empty.

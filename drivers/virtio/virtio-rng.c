@@ -82,7 +82,7 @@ static int virtio_rng_get_entropy_internal(const struct device *dev, uint8_t *bu
 	    return -EIO;
     virtqueue_notify(DEV_DATA(dev)->vqin);
     do {
-	    cookie = virtqueue_dequeue_buf(DEV_DATA(dev)->vqin, NULL);
+	    cookie = virtqueue_dequeue(DEV_DATA(dev)->vqin, NULL);
 	    /* TODO: yield or something if not in isr context. might not work, as we're irq locked when called from task context */
     } while (!cookie);
     __ASSERT(cookie == buffer, "Got the wrong cookie");

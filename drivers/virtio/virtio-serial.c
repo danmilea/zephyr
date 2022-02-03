@@ -275,7 +275,7 @@ static int virtio_serial_poll_in(const struct device *dev, unsigned char *p_char
     if (atomic_cas(&chan->rx_inuse, 0, 1) == false)
         return ret;
     if (chan->rxpoll_active) {
-        void *cookie = virtqueue_dequeue_buf(chan->vqin, NULL);
+        void *cookie = virtqueue_dequeue(chan->vqin, NULL);
         if (!cookie) {
             /* Nothing received yet */
             atomic_set(&chan->rx_inuse, 0);
@@ -347,7 +347,7 @@ static void virtio_serial_poll_out(const struct device *dev, unsigned char out_c
     length = ring_buf_put_claim(chan->txfifo, &data, 1);
 
     if ((length == 0) || virtqueue_full(chan->vqout)) {
-        void *cookie = virtqueue_dequeue_buf(chan->vqout, NULL);
+        void *cookie = virtqueue_dequeue(chan->vqout, NULL);
         if (cookie)
             ring_buf_get(chan->txfifo, NULL, (uint32_t)(uintptr_t)cookie);
         }
@@ -376,7 +376,7 @@ static void virtio_serial_vqin_cb(void *arg)
     bool rx_ready = false;
     printk("vqin\n");
 
-    while((cookie = virtqueue_dequeue_buf(chan->vqin, &length))) {
+    while((cookie = virtqueue_dequeue(chan->vqin, &length))) {
         printk("got %d\n", length);
 
         written = ring_buf_put(chan->rxfifo, cookie, length);
@@ -401,7 +401,7 @@ static void virtio_serial_vqout_cb(void *arg)
     bool tx_ready = false;
     printk("vqout\n");
     do {
-        cookie = virtqueue_dequeue_buf(chan->vqout, NULL);
+        cookie = virtqueue_dequeue(chan->vqout, NULL);
         if (cookie) {
             length = (int)(uintptr_t)cookie;
             ring_buf_get(chan->txfifo, NULL, length);
