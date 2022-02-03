@@ -269,7 +269,7 @@ static void virtio_net_vqout_cb(void *arg)
 {
     struct virtio_net_data *pdata = arg;
     struct virtio_net_desc *desc;
-    while ((desc = virtqueue_dequeue_buf(pdata->vqout, NULL)))
+    while ((desc = virtqueue_dequeue(pdata->vqout, NULL)))
         {
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(pdata->dev)->log, "dequeued %p\n", desc);
@@ -286,7 +286,7 @@ static void virtio_net_vqin_cb(void *arg)
     int length;
     struct net_pkt *pkt;
 
-    while ((desc = virtqueue_dequeue_buf(DEV_DATA(dev)->vqin, &length)))
+    while ((desc = virtqueue_dequeue(DEV_DATA(dev)->vqin, &length)))
         {
         length -= DEV_DATA(dev)->hdrsize;
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
