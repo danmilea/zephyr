@@ -12,6 +12,8 @@
 #include <sys/slist.h>
 #include <logging/log.h>
 
+#undef CONFIG_VIRTIO_NET_ZEROCOPY_TX
+
 #define DT_DRV_COMPAT virtio_net
 
 #define LOG_MODULE_NAME virtio_net
@@ -21,7 +23,11 @@ LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
 #define DEV_DATA(dev) ((struct virtio_net_data*)(dev->data))
 
 #define VQIN_SIZE    4
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+#define VQOUT_SIZE   32
+#else
 #define VQOUT_SIZE   4
+#endif
 
 #define VIRTIO_NET_F_MAC BIT(5)
 #define VIRTIO_NET_F_MRG_RXBUF BIT(15)
@@ -41,10 +47,37 @@ struct virtio_net_pkt {
     uint8_t pkt[NET_ETH_MAX_FRAME_SIZE];
 };
 
+struct virtio_net_tx_pkt {
+    struct virtio_net_hdr hdr;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    uint8_t pkt[0];
+#else
+    uint8_t pkt[NET_ETH_MAX_FRAME_SIZE];
+#endif
+};
+
 struct virtio_net_desc {
     sys_snode_t node;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    struct net_pkt *npkt;
+#endif
     struct virtio_net_pkt *pkt;
     uint8_t *data;
+    //TODO: put a semaphore here instead of tx_done_sem
+    //if a thread is scheduled out before enqueue,
+    //we could return from send before the packet is actually
+    //sent
+};
+
+struct virtio_net_tx_desc {
+    sys_snode_t node;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    struct net_pkt *npkt;
+#endif
+    struct virtio_net_tx_pkt *pkt;
+#if !defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    uint8_t *data;
+#endif
     //TODO: put a semaphore here instead of tx_done_sem
     //if a thread is scheduled out before enqueue,
     //we could return from send before the packet is actually
@@ -56,8 +89,8 @@ struct virtio_net_config {
     LOG_INSTANCE_PTR_DECLARE(log);
     int vq_count;
     struct virtqueue **vqs;
-    struct virtio_net_pkt *txbuf;
-    struct virtio_net_desc *txdesc;
+    struct virtio_net_tx_pkt *txbuf;
+    struct virtio_net_tx_desc *txdesc;
     struct virtio_net_pkt *rxbuf;
     struct virtio_net_desc *rxdesc;
 };
@@ -90,8 +123,8 @@ static const struct ethernet_api virtio_net_api = {
     LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_NET_LOG_LEVEL);\
     static struct virtio_net_pkt rxbuf_##inst[VQIN_SIZE];\
     static struct virtio_net_desc rxdesc_##inst[VQIN_SIZE];\
-    static struct virtio_net_pkt txbuf_##inst[VQOUT_SIZE];\
-    static struct virtio_net_desc txdesc_##inst[VQOUT_SIZE];\
+    static struct virtio_net_tx_pkt txbuf_##inst[VQOUT_SIZE];\
+    static struct virtio_net_tx_desc txdesc_##inst[VQOUT_SIZE];\
     VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
     VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
     static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst), VQ_PTR(vq1_##inst)};\
@@ -187,10 +220,12 @@ static int virtio_net_init(const struct device *dev)
         {
         LOG_INST_DBG(DEV_CFG(dev)->log, "tx %d at %p\n",i,&DEV_CFG(dev)->txdesc[i]);
         DEV_CFG(dev)->txdesc[i].pkt = &DEV_CFG(dev)->txbuf[i];
+#if !defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
         if (features & VIRTIO_NET_F_MRG_RXBUF)
             DEV_CFG(dev)->txdesc[i].data = DEV_CFG(dev)->txbuf[i].pkt;
         else
             DEV_CFG(dev)->txdesc[i].data = (uint8_t*)&DEV_CFG(dev)->txbuf[i].hdr.num_buffers;
+#endif
         sys_slist_append(&DEV_DATA(dev)->tx_free_list, &DEV_CFG(dev)->txdesc[i].node);
         }
     k_sem_init(&DEV_DATA(dev)->tx_done_sem, 0, 1);
@@ -222,10 +257,15 @@ static void virtio_net_iface_init(struct net_if *iface)
 static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
 {
     sys_snode_t *node;
-    struct virtio_net_desc *desc;
+    struct virtio_net_tx_desc *desc;
     uint16_t total_len;
     int key;
     int ret = -EIO;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    struct iovec iov[32];
+    size_t iovlen = 1;
+    struct net_buf *frag;
+#endif
 
     //net_if_tx() checks if pkt is non-NULL
     total_len = net_pkt_get_len(pkt);
@@ -244,6 +284,25 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     desc = SYS_SLIST_CONTAINER(node, desc, node);
     LOG_INST_DBG(DEV_CFG(dev)->log, "desc=%p\n", desc);
     memset(&desc->pkt->hdr, 0, sizeof(desc->pkt->hdr));
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    net_pkt_ref(pkt);
+    desc->npkt = pkt;
+    iov[0].iov_base = &desc->pkt->hdr;
+    iov[0].iov_len = DEV_DATA(dev)->hdrsize;
+    for (frag = pkt->frags; frag ; frag = frag->frags, iovlen++) {
+            if (iovlen >= 32)
+                {
+                LOG_INST_ERR(DEV_CFG(dev)->log, " iovlen %ld\n", iovlen);
+                goto recycle;
+                }
+            iov[iovlen].iov_base = frag->data;
+            iov[iovlen].iov_len = frag->len;
+            LOG_INST_DBG(DEV_CFG(dev)->log, " iovlen %ld len %d\n", iovlen, frag->len);
+
+        }
+    if (virtqueue_enqueue(DEV_DATA(dev)->vqout, (void*)desc, &iov[0], iovlen, 0))
+        goto recycle;
+#else /* CONFIG_VIRTIO_NET_ZEROCOPY_TX */
     if (net_pkt_read(pkt, desc->data, total_len))
         {
             LOG_INST_WRN(DEV_CFG(dev)->log, "Failed to read packet into buffer");
@@ -253,12 +312,16 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     /* maybe when doin scatter-gather this will change */
     if (virtqueue_enqueue_buf(DEV_DATA(dev)->vqout, (void*)desc, 0, (char*)desc->pkt, total_len + DEV_DATA(dev)->hdrsize))
         goto recycle;
+#endif /* CONFIG_VIRTIO_NET_ZEROCOPY_TX */
     virtqueue_notify(DEV_DATA(dev)->vqout);
     k_sem_take(&DEV_DATA(dev)->tx_done_sem,K_FOREVER);
     return 0;
 
 recycle:
     key = irq_lock();
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+    net_pkt_unref(pkt);
+#endif
     /* VQ callback can't access the free list if interrupts are locked */
     sys_slist_append(&DEV_DATA(dev)->tx_free_list, &desc->node);
     irq_unlock(key);
@@ -268,11 +331,14 @@ recycle:
 static void virtio_net_vqout_cb(void *arg)
 {
     struct virtio_net_data *pdata = arg;
-    struct virtio_net_desc *desc;
+    struct virtio_net_tx_desc *desc;
     while ((desc = virtqueue_dequeue(pdata->vqout, NULL)))
         {
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(pdata->dev)->log, "dequeued %p\n", desc);
+#endif
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
+        net_pkt_unref(desc->npkt);
 #endif
         sys_slist_append(&pdata->tx_free_list, &desc->node);
         k_sem_give(&pdata->tx_done_sem);
