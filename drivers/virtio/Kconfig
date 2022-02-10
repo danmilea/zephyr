@@ -35,7 +35,7 @@ source "subsys/logging/Kconfig.template.log_config"
 
 endif #VIRTIO_RNG
 
-config VIRTIO_NETWORK
+menuconfig VIRTIO_NETWORK
 	bool "Support VIRTIO Network device"
 	help
 	  Enable support for VIRTIO Network device
@@ -54,6 +54,12 @@ config ETH_DEVICE
         help
           Tells what Qemu network model to use. This value is given as
           a parameter to -device qemu command line option.
+
+config VIRTIO_NET_ZEROCOPY_TX
+        bool "Enable zero-copy transmit"
+        default n
+        help
+          Don't copy the packet contents to a separate buffer.
 
 endif #VIRTIO_NETWORK
 

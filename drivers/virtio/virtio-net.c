@@ -12,8 +12,6 @@
 #include <sys/slist.h>
 #include <logging/log.h>
 
-#undef CONFIG_VIRTIO_NET_ZEROCOPY_TX
-
 #define DT_DRV_COMPAT virtio_net
 
 #define LOG_MODULE_NAME virtio_net
