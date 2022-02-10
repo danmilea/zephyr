@@ -61,14 +61,11 @@ struct virtio_net_desc {
 #endif
     struct virtio_net_pkt *pkt;
     uint8_t *data;
-    //TODO: put a semaphore here instead of tx_done_sem
-    //if a thread is scheduled out before enqueue,
-    //we could return from send before the packet is actually
-    //sent
 };
 
 struct virtio_net_tx_desc {
     sys_snode_t node;
+    struct k_sem done_sem;
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
     struct net_pkt *npkt;
 #endif
@@ -76,10 +73,6 @@ struct virtio_net_tx_desc {
 #if !defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
     uint8_t *data;
 #endif
-    //TODO: put a semaphore here instead of tx_done_sem
-    //if a thread is scheduled out before enqueue,
-    //we could return from send before the packet is actually
-    //sent
 };
 
 struct virtio_net_config {
@@ -100,7 +93,6 @@ struct virtio_net_data {
     struct virtqueue *vqin, *vqout;
     int hdrsize;
     sys_slist_t tx_free_list;
-    struct k_sem tx_done_sem;
     sys_slist_t rx_free_list;
 };
 
@@ -218,6 +210,8 @@ static int virtio_net_init(const struct device *dev)
         {
         LOG_INST_DBG(DEV_CFG(dev)->log, "tx %d at %p\n",i,&DEV_CFG(dev)->txdesc[i]);
         DEV_CFG(dev)->txdesc[i].pkt = &DEV_CFG(dev)->txbuf[i];
+        k_sem_init(&DEV_CFG(dev)->txdesc[i].done_sem, 0, 1);
+
 #if !defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
         if (features & VIRTIO_NET_F_MRG_RXBUF)
             DEV_CFG(dev)->txdesc[i].data = DEV_CFG(dev)->txbuf[i].pkt;
@@ -226,7 +220,6 @@ static int virtio_net_init(const struct device *dev)
 #endif
         sys_slist_append(&DEV_DATA(dev)->tx_free_list, &DEV_CFG(dev)->txdesc[i].node);
         }
-    k_sem_init(&DEV_DATA(dev)->tx_done_sem, 0, 1);
     virtqueue_notify(DEV_DATA(dev)->vqin);
     virtqueue_notify(DEV_DATA(dev)->vqout);
 
@@ -312,7 +305,7 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
         goto recycle;
 #endif /* CONFIG_VIRTIO_NET_ZEROCOPY_TX */
     virtqueue_notify(DEV_DATA(dev)->vqout);
-    k_sem_take(&DEV_DATA(dev)->tx_done_sem,K_FOREVER);
+    k_sem_take(&desc->done_sem, K_FOREVER);
     return 0;
 
 recycle:
@@ -339,7 +332,7 @@ static void virtio_net_vqout_cb(void *arg)
         net_pkt_unref(desc->npkt);
 #endif
         sys_slist_append(&pdata->tx_free_list, &desc->node);
-        k_sem_give(&pdata->tx_done_sem);
+        k_sem_give(&desc->done_sem);
         }
 }
 
