@@ -309,10 +309,10 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     return 0;
 
 recycle:
-    key = irq_lock();
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
     net_pkt_unref(pkt);
 #endif
+    key = irq_lock();
     /* VQ callback can't access the free list if interrupts are locked */
     sys_slist_append(&DEV_DATA(dev)->tx_free_list, &desc->node);
     irq_unlock(key);
