@@ -277,7 +277,6 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     LOG_INST_DBG(DEV_CFG(dev)->log, "desc=%p\n", desc);
     memset(&desc->pkt->hdr, 0, sizeof(desc->pkt->hdr));
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
-    net_pkt_ref(pkt);
     desc->npkt = pkt;
     iov[0].iov_base = &desc->pkt->hdr;
     iov[0].iov_len = DEV_DATA(dev)->hdrsize;
@@ -310,9 +309,6 @@ static int virtio_net_send(const struct device *dev, struct net_pkt *pkt)
     return 0;
 
 recycle:
-#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
-    net_pkt_unref(pkt);
-#endif
     key = irq_lock();
     /* VQ callback can't access the free list if interrupts are locked */
     sys_slist_append(&DEV_DATA(dev)->tx_free_list, &desc->node);
@@ -328,9 +324,6 @@ static void virtio_net_vqout_cb(void *arg)
         {
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(pdata->dev)->log, "dequeued %p\n", desc);
-#endif
-#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
-        net_pkt_unref(desc->npkt);
 #endif
         sys_slist_append(&pdata->tx_free_list, &desc->node);
         k_sem_give(&desc->done_sem);
