@@ -21,10 +21,14 @@ LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
 #define DEV_DATA(dev) ((struct virtio_net_data*)(dev->data))
 
 #define VQIN_SIZE    4
+#define RXDESC_COUNT 4
+
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
 #define VQOUT_SIZE   32
+#define TXDESC_COUNT 16
 #else
 #define VQOUT_SIZE   4
+#define TXDESC_COUNT 4
 #endif
 
 #define VIRTIO_NET_F_MAC BIT(5)
@@ -40,7 +44,7 @@ struct virtio_net_hdr {
     uint16_t num_buffers;
 };
 
-struct virtio_net_pkt {
+struct virtio_net_rx_pkt {
     struct virtio_net_hdr hdr;
     uint8_t pkt[NET_ETH_MAX_FRAME_SIZE];
 };
@@ -54,12 +58,9 @@ struct virtio_net_tx_pkt {
 #endif
 };
 
-struct virtio_net_desc {
+struct virtio_net_rx_desc {
     sys_snode_t node;
-#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
-    struct net_pkt *npkt;
-#endif
-    struct virtio_net_pkt *pkt;
+    struct virtio_net_rx_pkt *pkt;
     uint8_t *data;
 };
 
@@ -82,8 +83,8 @@ struct virtio_net_config {
     struct virtqueue **vqs;
     struct virtio_net_tx_pkt *txbuf;
     struct virtio_net_tx_desc *txdesc;
-    struct virtio_net_pkt *rxbuf;
-    struct virtio_net_desc *rxdesc;
+    struct virtio_net_rx_pkt *rxbuf;
+    struct virtio_net_rx_desc *rxdesc;
 };
 
 struct virtio_net_data {
@@ -111,10 +112,10 @@ static const struct ethernet_api virtio_net_api = {
 
 #define CREATE_VIRTIO_NET_DEVICE(inst) \
     LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_NET_LOG_LEVEL);\
-    static struct virtio_net_pkt rxbuf_##inst[VQIN_SIZE];\
-    static struct virtio_net_desc rxdesc_##inst[VQIN_SIZE];\
-    static struct virtio_net_tx_pkt txbuf_##inst[VQOUT_SIZE];\
-    static struct virtio_net_tx_desc txdesc_##inst[VQOUT_SIZE];\
+    static struct virtio_net_rx_pkt rxbuf_##inst[RXDESC_COUNT];\
+    static struct virtio_net_rx_desc rxdesc_##inst[RXDESC_COUNT];\
+    static struct virtio_net_tx_pkt txbuf_##inst[TXDESC_COUNT];\
+    static struct virtio_net_tx_desc txdesc_##inst[TXDESC_COUNT];\
     VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
     VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
     static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst), VQ_PTR(vq1_##inst)};\
@@ -194,7 +195,7 @@ static int virtio_net_init(const struct device *dev)
         DEV_DATA(dev)->hdrsize -= 2;
 
     sys_slist_init(&DEV_DATA(dev)->rx_free_list);
-    for (i = 0; i < VQIN_SIZE; i++)
+    for (i = 0; i < RXDESC_COUNT; i++)
         {
         LOG_INST_DBG(DEV_CFG(dev)->log, "rx %d at %p\n",i,&DEV_CFG(dev)->rxdesc[i]);
         DEV_CFG(dev)->rxdesc[i].pkt = &DEV_CFG(dev)->rxbuf[i];
@@ -206,7 +207,7 @@ static int virtio_net_init(const struct device *dev)
         }
     virtio_net_rx_refill(DEV_DATA(dev));
     sys_slist_init(&DEV_DATA(dev)->tx_free_list);
-    for (i = 0; i < VQOUT_SIZE; i++)
+    for (i = 0; i < TXDESC_COUNT; i++)
         {
         LOG_INST_DBG(DEV_CFG(dev)->log, "tx %d at %p\n",i,&DEV_CFG(dev)->txdesc[i]);
         DEV_CFG(dev)->txdesc[i].pkt = &DEV_CFG(dev)->txbuf[i];
@@ -339,7 +340,7 @@ static void virtio_net_vqout_cb(void *arg)
 static void virtio_net_vqin_cb(void *arg)
 {
     const struct device *dev = arg;
-    struct virtio_net_desc *desc;
+    struct virtio_net_rx_desc *desc;
     int length;
     struct net_pkt *pkt;
 
@@ -378,7 +379,7 @@ static void virtio_net_rx_refill(struct virtio_net_data *pdata)
     while (!virtqueue_full(pdata->vqin))
         {
         sys_snode_t *node = sys_slist_get(&pdata->rx_free_list);;
-        struct virtio_net_desc *desc;
+        struct virtio_net_rx_desc *desc;
         if (!node)
             {
             __ASSERT(desc, "should have one descriptor per VQ buffer");
