@@ -14,6 +14,8 @@
 
 #define DT_DRV_COMPAT virtio_net
 
+#define CONFIG_VIRTIO_NET_ZEROCOPY_RX
+
 #define LOG_MODULE_NAME virtio_net
 LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
 
@@ -22,6 +24,7 @@ LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
 
 #define VQIN_SIZE    4
 #define RXDESC_COUNT 4
+#define RXPOOL_SIZE  6
 
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_TX)
 #define VQOUT_SIZE   32
@@ -60,8 +63,12 @@ struct virtio_net_tx_pkt {
 
 struct virtio_net_rx_desc {
     sys_snode_t node;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+    struct net_buf *net_buf;
+#else
     struct virtio_net_rx_pkt *pkt;
     uint8_t *data;
+#endif
 };
 
 struct virtio_net_tx_desc {
@@ -83,7 +90,11 @@ struct virtio_net_config {
     struct virtqueue **vqs;
     struct virtio_net_tx_pkt *txbuf;
     struct virtio_net_tx_desc *txdesc;
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+    struct net_buf_pool *rxpool;
+#else
     struct virtio_net_rx_pkt *rxbuf;
+#endif
     struct virtio_net_rx_desc *rxdesc;
 };
 
@@ -110,9 +121,23 @@ static const struct ethernet_api virtio_net_api = {
 };
 
 
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+#define CREATE_VIRTIO_NET_RXBUFS(inst) \
+    NET_BUF_POOL_FIXED_DEFINE(rxpool_##inst, RXPOOL_SIZE,\
+        sizeof(struct virtio_net_hdr) + NET_ETH_MAX_FRAME_SIZE, NULL);
+#define SET_VIRTIO_NET_RXBUFS(inst) \
+        .rxpool = &rxpool_##inst,
+#else
+#define CREATE_VIRTIO_NET_RXBUFS(inst) \
+    static struct virtio_net_rx_pkt rxbuf_##inst[RXDESC_COUNT];
+#define SET_VIRTIO_NET_RXBUFS(inst) \
+        .rxbuf = rxbuf_##inst,
+#endif
+
+
 #define CREATE_VIRTIO_NET_DEVICE(inst) \
     LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_NET_LOG_LEVEL);\
-    static struct virtio_net_rx_pkt rxbuf_##inst[RXDESC_COUNT];\
+    CREATE_VIRTIO_NET_RXBUFS(inst);\
     static struct virtio_net_rx_desc rxdesc_##inst[RXDESC_COUNT];\
     static struct virtio_net_tx_pkt txbuf_##inst[TXDESC_COUNT];\
     static struct virtio_net_tx_desc txdesc_##inst[TXDESC_COUNT];\
@@ -124,7 +149,7 @@ static const struct ethernet_api virtio_net_api = {
         LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, inst)\
         .vq_count = 2,\
         .vqs = &vq_list_##inst[0],\
-        .rxbuf = rxbuf_##inst,\
+        SET_VIRTIO_NET_RXBUFS(inst)\
         .rxdesc = rxdesc_##inst,\
         .txbuf = txbuf_##inst,\
         .txdesc = txdesc_##inst,\
@@ -198,11 +223,15 @@ static int virtio_net_init(const struct device *dev)
     for (i = 0; i < RXDESC_COUNT; i++)
         {
         LOG_INST_DBG(DEV_CFG(dev)->log, "rx %d at %p\n",i,&DEV_CFG(dev)->rxdesc[i]);
+#if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+        /* Nothing to do here */
+#else
         DEV_CFG(dev)->rxdesc[i].pkt = &DEV_CFG(dev)->rxbuf[i];
         if (features & VIRTIO_NET_F_MRG_RXBUF)
             DEV_CFG(dev)->rxdesc[i].data = DEV_CFG(dev)->rxbuf[i].pkt;
         else
             DEV_CFG(dev)->rxdesc[i].data = (uint8_t*)&DEV_CFG(dev)->rxbuf[i].hdr.num_buffers;
+#endif
         sys_slist_append(&DEV_DATA(dev)->rx_free_list, &DEV_CFG(dev)->rxdesc[i].node);
         }
     virtio_net_rx_refill(DEV_DATA(dev));
@@ -330,6 +359,80 @@ static void virtio_net_vqout_cb(void *arg)
         }
 }
 
+#if defined (CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+static void virtio_net_vqin_cb(void *arg)
+{
+    const struct device *dev = arg;
+    struct virtio_net_rx_desc *desc;
+    int length;
+    struct net_pkt *pkt;
+
+    while ((desc = virtqueue_dequeue(DEV_DATA(dev)->vqin, &length)))
+        {
+        length -= DEV_DATA(dev)->hdrsize;
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
+        LOG_INST_DBG(DEV_CFG(dev)->log, "dequeued %p len=%d\n", desc, length);
+#endif
+        pkt = net_pkt_rx_alloc_on_iface(DEV_DATA(dev)->iface, K_NO_WAIT);
+        if (pkt == NULL)
+            {
+            sys_slist_append(&DEV_DATA(dev)->rx_free_list, &desc->node);
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
+            LOG_INST_WRN(DEV_CFG(dev)->log, "packet allocation failure");
+#endif
+            continue;
+            }
+        desc->net_buf->len = length;
+        desc->net_buf->data += DEV_DATA(dev)->hdrsize;
+        pkt->frags = desc->net_buf;
+        if (net_recv_data(DEV_DATA(dev)->iface, pkt) < 0)
+            {
+#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
+            LOG_INST_WRN(DEV_CFG(dev)->log, "net_recv_data() failed");
+#endif
+            net_pkt_unref(pkt);
+            }
+
+        sys_slist_append(&DEV_DATA(dev)->rx_free_list, &desc->node);
+        }
+    virtio_net_rx_refill(DEV_DATA(dev));
+}
+
+static void virtio_net_rx_refill(struct virtio_net_data *pdata)
+{
+    /* This is called from .init once and then from VQ callback only so no locking. For now. */
+    while (!virtqueue_full(pdata->vqin))
+        {
+        struct net_buf *buf = net_buf_alloc_fixed(DEV_CFG(pdata->dev)->rxpool, K_NO_WAIT);
+        if (buf == NULL)
+            {
+            break;
+            }
+
+        sys_snode_t *node = sys_slist_get(&pdata->rx_free_list);
+        struct virtio_net_rx_desc *desc;
+        if (!node)
+            {
+            net_buf_unref(buf);
+            __ASSERT(desc, "should have one descriptor per VQ buffer");
+            break;
+            }
+        desc = SYS_SLIST_CONTAINER(node, desc, node);
+        net_buf_reset(buf);
+        desc->net_buf = buf;
+
+        memset(desc->net_buf->data, 0, pdata->hdrsize);
+        if (virtqueue_enqueue_buf(pdata->vqin, (void*)desc, 1, desc->net_buf->data, pdata->hdrsize + NET_ETH_MTU))
+            {
+            __ASSERT(0, "should have one descriptor per VQ buffer. this should really never happen");
+            net_buf_unref(buf);
+            sys_slist_append(&pdata->rx_free_list, &desc->node);
+            break;
+            }
+        }
+}
+
+#else /* defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX) */
 static void virtio_net_vqin_cb(void *arg)
 {
     const struct device *dev = arg;
@@ -371,7 +474,7 @@ static void virtio_net_rx_refill(struct virtio_net_data *pdata)
     /* This is called from .init once and then from VQ callback only so no locking. For now. */
     while (!virtqueue_full(pdata->vqin))
         {
-        sys_snode_t *node = sys_slist_get(&pdata->rx_free_list);;
+        sys_snode_t *node = sys_slist_get(&pdata->rx_free_list);
         struct virtio_net_rx_desc *desc;
         if (!node)
             {
@@ -388,5 +491,7 @@ static void virtio_net_rx_refill(struct virtio_net_data *pdata)
             }
         }
 }
+
+#endif /* defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX) */
 
 DT_INST_FOREACH_STATUS_OKAY(CREATE_VIRTIO_NET_DEVICE)
