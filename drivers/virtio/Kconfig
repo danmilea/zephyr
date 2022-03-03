@@ -61,6 +61,12 @@ config VIRTIO_NET_ZEROCOPY_TX
         help
           Don't copy the packet contents to a separate buffer.
 
+config VIRTIO_NET_ZEROCOPY_RX
+        bool "Enable zero-copy receive"
+        default n
+        help
+          Perform reception direcly into a network packet.
+
 endif #VIRTIO_NETWORK
 
 endif #VIRTIO
