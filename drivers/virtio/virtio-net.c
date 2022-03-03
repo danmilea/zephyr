@@ -14,8 +14,6 @@
 
 #define DT_DRV_COMPAT virtio_net
 
-#define CONFIG_VIRTIO_NET_ZEROCOPY_RX
-
 #define LOG_MODULE_NAME virtio_net
 LOG_LEVEL_SET(CONFIG_VIRTIO_NET_LOG_LEVEL);
 
@@ -64,7 +62,7 @@ struct virtio_net_tx_pkt {
 struct virtio_net_rx_desc {
     sys_snode_t node;
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
-    struct net_buf *net_buf;
+    struct net_pkt *npkt;
 #else
     struct virtio_net_rx_pkt *pkt;
     uint8_t *data;
@@ -91,6 +89,7 @@ struct virtio_net_config {
     struct virtio_net_tx_pkt *txbuf;
     struct virtio_net_tx_desc *txdesc;
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
+    struct k_mem_slab *rxslab;
     struct net_buf_pool *rxpool;
 #else
     struct virtio_net_rx_pkt *rxbuf;
@@ -123,9 +122,11 @@ static const struct ethernet_api virtio_net_api = {
 
 #if defined(CONFIG_VIRTIO_NET_ZEROCOPY_RX)
 #define CREATE_VIRTIO_NET_RXBUFS(inst) \
+    NET_PKT_SLAB_DEFINE(rxslab_##inst, RXPOOL_SIZE);\
     NET_BUF_POOL_FIXED_DEFINE(rxpool_##inst, RXPOOL_SIZE,\
         sizeof(struct virtio_net_hdr) + NET_ETH_MAX_FRAME_SIZE, NULL);
 #define SET_VIRTIO_NET_RXBUFS(inst) \
+        .rxslab = &rxslab_##inst,\
         .rxpool = &rxpool_##inst,
 #else
 #define CREATE_VIRTIO_NET_RXBUFS(inst) \
@@ -365,7 +366,6 @@ static void virtio_net_vqin_cb(void *arg)
     const struct device *dev = arg;
     struct virtio_net_rx_desc *desc;
     int length;
-    struct net_pkt *pkt;
 
     while ((desc = virtqueue_dequeue(DEV_DATA(dev)->vqin, &length)))
         {
@@ -373,24 +373,14 @@ static void virtio_net_vqin_cb(void *arg)
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
         LOG_INST_DBG(DEV_CFG(dev)->log, "dequeued %p len=%d\n", desc, length);
 #endif
-        pkt = net_pkt_rx_alloc_on_iface(DEV_DATA(dev)->iface, K_NO_WAIT);
-        if (pkt == NULL)
-            {
-            sys_slist_append(&DEV_DATA(dev)->rx_free_list, &desc->node);
-#if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
-            LOG_INST_WRN(DEV_CFG(dev)->log, "packet allocation failure");
-#endif
-            continue;
-            }
-        desc->net_buf->len = length;
-        desc->net_buf->data += DEV_DATA(dev)->hdrsize;
-        pkt->frags = desc->net_buf;
-        if (net_recv_data(DEV_DATA(dev)->iface, pkt) < 0)
+        desc->npkt->frags->len = length;
+        desc->npkt->frags->data += DEV_DATA(dev)->hdrsize;
+        if (net_recv_data(DEV_DATA(dev)->iface, desc->npkt) < 0)
             {
 #if !defined(CONFIG_LOG_MODE_IMMEDIATE) && !defined(CONFIG_LOG2_MODE_IMMEDIATE)
             LOG_INST_WRN(DEV_CFG(dev)->log, "net_recv_data() failed");
 #endif
-            net_pkt_unref(pkt);
+            net_pkt_unref(desc->npkt);
             }
 
         sys_slist_append(&DEV_DATA(dev)->rx_free_list, &desc->node);
@@ -408,24 +398,29 @@ static void virtio_net_rx_refill(struct virtio_net_data *pdata)
             {
             break;
             }
+        struct net_pkt *pkt = net_pkt_alloc_from_slab(DEV_CFG(pdata->dev)->rxslab, K_NO_WAIT);
+        __ASSERT(pkt, "should have one net_pkt per net_buf");
 
         sys_snode_t *node = sys_slist_get(&pdata->rx_free_list);
         struct virtio_net_rx_desc *desc;
         if (!node)
             {
             net_buf_unref(buf);
+            net_pkt_unref(pkt);
             __ASSERT(desc, "should have one descriptor per VQ buffer");
             break;
             }
         desc = SYS_SLIST_CONTAINER(node, desc, node);
         net_buf_reset(buf);
-        desc->net_buf = buf;
+        desc->npkt = pkt;
+        pkt->frags = buf;
 
-        memset(desc->net_buf->data, 0, pdata->hdrsize);
-        if (virtqueue_enqueue_buf(pdata->vqin, (void*)desc, 1, desc->net_buf->data, pdata->hdrsize + NET_ETH_MTU))
+        memset(buf->data, 0, pdata->hdrsize);
+        if (virtqueue_enqueue_buf(pdata->vqin, (void*)desc, 1, buf->data, pdata->hdrsize + NET_ETH_MTU))
             {
             __ASSERT(0, "should have one descriptor per VQ buffer. this should really never happen");
             net_buf_unref(buf);
+            net_pkt_unref(pkt);
             sys_slist_append(&pdata->rx_free_list, &desc->node);
             break;
             }
