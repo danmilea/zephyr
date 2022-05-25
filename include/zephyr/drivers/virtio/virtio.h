@@ -31,8 +31,13 @@
  */
 
 /**
- * @brief virtio virtio stuff
- * @defgroup virtio virtio stuff
+ * @brief VIRTIO API
+ * @defgroup virtio VIRTIO API
+ * @ingroup io_interfaces
+ *
+ * This module contains functions and structures used to implement
+ * VIRTIO drivers.
+ *
  * @{
  */
 
