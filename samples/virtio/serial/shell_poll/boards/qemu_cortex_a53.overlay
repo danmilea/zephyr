@@ -2,6 +2,7 @@
 	virtio_mmio@a003e00 {
 		status = "okay";
 		label = "virtio0";
+		memory-region = <&sram0>;
 		virtio0: serial {
 		label = "virt-serial";
 		compatible = "virtio-serial";

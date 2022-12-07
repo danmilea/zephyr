@@ -12,6 +12,13 @@ properties:
       required: true
     dma-coherent:
       type: boolean
+    memory-region:
+      type: phandle
+      required: false
+      default: &sram0
+    driver-mode:
+      type: boolean
+      required: false
 
 interrupt-cells:
   - type

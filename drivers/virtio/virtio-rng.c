@@ -1,27 +1,23 @@
 
 /*
- * Copyright (c) 2021 Wind River Systems, Inc.
+ * Copyright (c) 2021-2022 Wind River Systems, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
  */
 
-#include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/virtio/virtio.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/logging/log.h>
+#include <openamp/virtio_rng.h>
 
 #define DT_DRV_COMPAT virtio_rng
-
 #define LOG_MODULE_NAME virtio_rng
 LOG_LEVEL_SET(CONFIG_VIRTIO_RNG_LOG_LEVEL);
 
-#define VQIN_SIZE 2
-
 #define DEV_CFG(dev) ((struct virtio_rng_config*)(dev->config))
-#define DEV_DATA(dev) ((struct virtio_rng_data*)(dev->data))
 
 struct virtio_rng_config {
     const struct device *bus;
@@ -30,93 +26,53 @@ struct virtio_rng_config {
     struct virtqueue **vqs;
 };
 
-struct virtio_rng_data {
-    struct virtqueue *vqin;
-};
-
-static int virtio_rng_init(const struct device *dev)
+static int vtio_rng_init(const struct device *dev)
 {
-    uint32_t devid, features;
+    struct virtio_device *vdev = virtio_get_vmmio_dev(DEV_CFG(dev)->bus);
+    char *vq_names[] = {"rvq"};
 
-    printk("%s()\n",__FUNCTION__);
-    LOG_INST_DBG(DEV_CFG(dev)->log, "(%p)\n", dev);
-
-    __ASSERT(DEV_CFG(dev)->bus != NULL, "DEV_CFG(dev)->bus != NULL");
-    if (!device_is_ready(DEV_CFG(dev)->bus))
+    if (!device_is_ready(DEV_CFG(dev)->bus)) {
         return -1;
-    LOG_INST_DBG(DEV_CFG(dev)->log, "bus %p\n", DEV_CFG(dev)->bus);
-    devid = virtio_get_devid(DEV_CFG(dev)->bus);
-    if (devid != VIRTIO_ID_ENTROPY)
-        {
-        LOG_INST_ERR(DEV_CFG(dev)->log, "Expected devid %04x, got %04x\n", VIRTIO_ID_ENTROPY, devid);
-        return -1;
-        }
-    virtio_set_status(DEV_CFG(dev)->bus, VIRTIO_CONFIG_STATUS_DRIVER);
-    virtio_set_features(DEV_CFG(dev)->bus, 0/*VIRTIO_F_NOTIFY_ON_EMPTY*/);
-    features =virtio_get_features(DEV_CFG(dev)->bus);
+    }
 
-    LOG_INST_DBG(DEV_CFG(dev)->log, "features: %08x\n", features);
-
-    DEV_DATA(dev)->vqin =
-        virtio_setup_virtqueue(
-            DEV_CFG(dev)->bus,
-            0,
-            DEV_CFG(dev)->vqs[0],
-            NULL,
-            NULL
-            );
-    if (!DEV_DATA(dev)->vqin)
-        return -1;
-    virtio_register_device(DEV_CFG(dev)->bus, DEV_CFG(dev)->vq_count, DEV_CFG(dev)->vqs);
-    virtio_set_status(DEV_CFG(dev)->bus, VIRTIO_CONFIG_STATUS_DRIVER_OK);
-
-    virtqueue_notify(DEV_DATA(dev)->vqin);
-
-    return 0;
+    return virtio_rng_init(vdev, DEV_CFG(dev)->vqs, vq_names, DEV_CFG(dev)->vq_count);
 }
 
-static int virtio_rng_get_entropy_internal(const struct device *dev, uint8_t *buffer, uint16_t length)
+static int vtio_rng_get_entropy_internal(const struct device *dev, uint8_t *buffer, uint16_t length)
 {
-    void *cookie;
-    /*Not supposed to happen*/
-    if (virtqueue_enqueue_buf(DEV_DATA(dev)->vqin, buffer, 1, buffer, length))
-	    return -EIO;
-    virtqueue_notify(DEV_DATA(dev)->vqin);
-    do {
-	    cookie = virtqueue_dequeue(DEV_DATA(dev)->vqin, NULL);
-	    /* TODO: yield or something if not in isr context. might not work, as we're irq locked when called from task context */
-    } while (!cookie);
-    __ASSERT(cookie == buffer, "Got the wrong cookie");
-    return 0;
+    struct virtio_device *vdev = virtio_get_vmmio_dev(DEV_CFG(dev)->bus);
+    return virtio_rng_get_entropy(vdev, buffer, length);
 }
 
-static int virtio_rng_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
+static int vtio_rng_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
 {
     int key, ret;
 
     LOG_INST_DBG(DEV_CFG(dev)->log, "(%p, %d)\n", buffer, length);
 
     key = irq_lock();
-    ret = virtio_rng_get_entropy_internal(dev, buffer, length);
+    ret = vtio_rng_get_entropy_internal(dev, buffer, length);
     irq_unlock(key);
     return ret;
 }
 
-static int virtio_rng_get_entropy_isr(const struct device *dev, uint8_t *buffer, uint16_t length, uint32_t flags)
+static int vtio_rng_get_entropy_isr(const struct device *dev, uint8_t *buffer, uint16_t length, uint32_t flags)
 {
-    int key, ret;
+    int ret;
 
     LOG_INST_DBG(DEV_CFG(dev)->log, "(%p, %d, %08x)\n", buffer, length, flags);
 
-    ret = virtio_rng_get_entropy_internal(dev, buffer, length);
-    if (!ret)
+    ret = vtio_rng_get_entropy_internal(dev, buffer, length);
+    if (!ret) {
         ret = length;
+    }
+
     return ret;
 }
 
 static const struct entropy_driver_api virtio_rng_api = {
-    .get_entropy = virtio_rng_get_entropy,
-    .get_entropy_isr = virtio_rng_get_entropy_isr,
+    .get_entropy = vtio_rng_get_entropy,
+    .get_entropy_isr = vtio_rng_get_entropy_isr,
 };
 
 #define CREATE_VIRTIO_RNG_DEVICE(inst) \
@@ -129,12 +85,10 @@ static const struct entropy_driver_api virtio_rng_api = {
         .vq_count = 1,\
         .vqs = &vq_list_##inst[0],\
         };\
-    static struct virtio_rng_data virtio_rng_data_##inst = {\
-        };\
     DEVICE_DT_INST_DEFINE(	inst,\
-    virtio_rng_init,\
+    vtio_rng_init,\
     NULL,\
-    &virtio_rng_data_##inst,\
+    NULL,\
     &virtio_rng_cfg_##inst,\
     PRE_KERNEL_1,\
     CONFIG_ENTROPY_INIT_PRIORITY,\

@@ -8,5 +8,7 @@ list(APPEND QEMU_EXTRA_FLAGS -device virtconsole,chardev=foo)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(hello_world)
 
+zephyr_compile_definitions(METAL_MAX_DEVICE_REGIONS=2)
+
 target_sources(app PRIVATE src/main.c)
 

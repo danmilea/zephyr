@@ -6,99 +6,111 @@
  */
 
 #include <zephyr/kernel.h>
+#include <openamp/open_amp.h>
+#include <openamp/virtqueue.h>
+#include <openamp/virtio.h>
+#include <metal/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/virtio/virtio.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/device_mmio.h>
 
 #define DT_DRV_COMPAT virtio_mmio
 
-#define MMIO_MAGIC_VALUE        0x000
-#define MAGIC_VALUE ('v'|('i'<<8)|('r'<<16)|('t'<<24))
-#define MMIO_VERSION            0x004
-#define MMIO_DEVICE_ID          0x008
-#define MMIO_VENDOR_ID          0x00C
-#define MMIO_HOST_FEATURES      0x010
-#define MMIO_HOST_FEATURES_SEL  0x014
-#define MMIO_GUEST_FEATURES     0x020
-#define MMIO_GUEST_FEATURES_SEL 0x024
-#define MMIO_GUEST_PAGE_SIZE    0x028
-#define MMIO_QUEUE_SEL          0x030
-#define MMIO_QUEUE_NUM_MAX      0x034
-#define MMIO_QUEUE_NUM          0x038
-#define MMIO_QUEUE_ALIGN        0x03C
-#define MMIO_QUEUE_PFN          0x040
-#define MMIO_QUEUE_NOTIFY       0x050
-
-#define MMIO_INTERRUPT_STATUS   0x60
-#define MMIO_INTERRUPT_ACK      0x64
-
-#define MMIO_STATUS             0x070
-#define MMIO_CONFIG             0x100
-
 struct virtio_mmio_config {
-    DEVICE_MMIO_ROM;
     void (*irq_config)(const struct device *dev);
 };
 
-struct virtio_mmio_data {
-    DEVICE_MMIO_RAM;
-    uint32_t gfeatures;
-    int vq_num;
-    struct virtqueue **vqs;
-};
-
-#define DEV_CFG(dev) ((struct virtio_mmio_config*)(dev->config))
-#define DEV_DATA(dev) ((struct virtio_mmio_data*)(dev->data))
-#define READ32(dev, offset) sys_read32(DEVICE_MMIO_GET(dev) + offset)
-#define WRITE32(dev, offset, val) sys_write32(val, DEVICE_MMIO_GET(dev) + offset)
-#define READ8(dev, offset) sys_read8(DEVICE_MMIO_GET(dev) + offset)
-#define WRITE8(dev, offset, val) sys_write8(val, DEVICE_MMIO_GET(dev) + offset)
-
+#define DEV_CFG(dev) ((struct virtio_mmio_config *)(dev->config))
+#define DEV_DATA(dev) ((struct virtio_mmio_device *)(dev->data))
 
 static int virtio_mmio_init(const struct device *dev);
-static void virtio_mmio_isr(const struct device *dev);
-
-static uint32_t virtio_mmio_get_devid(const struct device *dev);
-
-static uint8_t virtio_mmio_get_status(const struct device *dev);
-static void virtio_mmio_set_status(const struct device *dev, uint8_t status);
-static uint32_t virtio_mmio_get_features(const struct device *dev);
-static void virtio_mmio_set_features(const struct device *dev, uint32_t features);
-static void virtio_mmio_read_config(const struct device *dev, uint32_t offset,
-                                    void *dst, int length);
-static void virtio_mmio_register_device(const struct device *dev, int, struct virtqueue**);
-static struct virtqueue * virtio_mmio_setup_virtqueue(const struct device *dev, unsigned int idx,
-                                        struct virtqueue *vq, void (*cb)(void *), void *cb_arg);
-static void virtio_mmio_virtqueue_notify(const struct device *dev, struct virtqueue *vq);
-
+struct virtio_device* virtio_mmio_get_virtio_device(const struct device *dev) {
+    return &DEV_DATA(dev)->vdev;
+}
 
 static const struct virtio_driver_api virtio_mmio_api = {
-  .get_devid = virtio_mmio_get_devid,
-  .get_status = virtio_mmio_get_status,
-  .set_status = virtio_mmio_set_status,
-  .get_features = virtio_mmio_get_features,
-  .set_features = virtio_mmio_set_features,
-  .read_config = virtio_mmio_read_config,
-  .register_device = virtio_mmio_register_device,
-  .setup_queue = virtio_mmio_setup_virtqueue,
-  .queue_notify = virtio_mmio_virtqueue_notify,
+    .get_virtio_device = virtio_mmio_get_virtio_device,
 };
 
+static struct k_heap hvl_shmem_k_heap;
+
+void virtio_mmio_shm_pool_init(void *mem, size_t size)
+{
+    static int init = 0;
+    if (!init) {
+        k_heap_init(&hvl_shmem_k_heap, mem, size);
+        init = 1;
+    }
+}
+
+void* virtio_mmio_shm_pool_alloc(size_t size)
+{
+    return k_heap_alloc(&hvl_shmem_k_heap, size, K_NO_WAIT);
+}
+
+void virtio_mmio_shm_pool_free(void *ptr)
+{
+    k_heap_free(&hvl_shmem_k_heap, ptr);
+}
+
+/* LINKER_DT_RESERVED_MEM_GET_SIZE */
 #define CREATE_VIRTIO_MMIO_DEVICE(inst)                              \
+    static struct virtio_mmio_device virtio_mmio_data_##inst = {       \
+        .vdev = { \
+            .priv = &virtio_mmio_data_##inst, \
+        }, \
+        .irq = DT_INST_IRQN(inst),                               \
+        .device_mode = !DT_PROP(DT_INST(inst, DT_DRV_COMPAT), driver_mode),   \
+        .cfg_mem = { \
+            .base = (uint8_t *)DT_INST_REG_ADDR(inst),                   \
+            .size = (unsigned int)DT_INST_REG_SIZE(inst),              \
+        }, \
+        .shm_mem = { \
+            .base = (uint8_t *)DT_REG_ADDR(DT_PHANDLE(DT_INST(inst, DT_DRV_COMPAT), memory_region)), \
+            .size = (unsigned int)DT_REG_SIZE(DT_PHANDLE(DT_INST(inst, DT_DRV_COMPAT), memory_region)), \
+        }, \
+        .shm_device = {                                      \
+            .name = DT_PROP(DT_INST(inst, DT_DRV_COMPAT), label),                         \
+            .bus = NULL,                                     \
+            .num_regions = 2,                                \
+            {                                                \
+                {                                            \
+                    .virt       = (void *) NULL,         \
+                    .physmap    = NULL,                  \
+                    .size       = 0,                     \
+                    .page_shift = (uintptr_t)0xffffffffffffffff,    \
+                    .page_mask  = (uintptr_t)0xffffffffffffffff,    \
+                    .mem_flags  = 0,                     \
+                    .ops        = { NULL },              \
+                },                                           \
+                {                                            \
+                    .virt       = (void *) NULL,         \
+                    .physmap    = NULL,                  \
+                    .size       = 0,                     \
+                    .page_shift = (uintptr_t)0xffffffffffffffff,    \
+                    .page_mask  = (uintptr_t)0xffffffffffffffff,    \
+                    .mem_flags  = 0,                     \
+                    .ops        = { NULL },              \
+                },                                           \
+            },                                               \
+            .node = { NULL },                                \
+            .irq_num = 0,                                    \
+            .irq_info = NULL                                 \
+        }                                                    \
+    };                                                               \
     static void irq_config_##inst(const struct device *dev)          \
     {\
         IRQ_CONNECT(DT_INST_IRQ(inst, irq),\
                     DT_INST_IRQ(inst, priority),\
                     virtio_mmio_isr,\
-                    DEVICE_DT_INST_GET(inst),\
+                    &virtio_mmio_data_##inst.vdev,\
                     0);\
-    irq_enable(DT_INST_IRQ(inst, irq));\
+        irq_enable(DT_INST_IRQ(inst, irq));\
     }\
     static struct virtio_mmio_config virtio_mmio_cfg_##inst = {      \
-        DEVICE_MMIO_ROM_INIT(DT_DRV_INST(inst)),                     \
-        irq_config_##inst,                                           \
-    };                                                               \
-    static struct virtio_mmio_data virtio_mmio_data_##inst = {       \
+        .irq_config = irq_config_##inst,                             \
     };                                                               \
     DEVICE_DT_INST_DEFINE(inst,                                      \
                           virtio_mmio_init,                          \
@@ -113,132 +125,44 @@ DT_INST_FOREACH_STATUS_OKAY(CREATE_VIRTIO_MMIO_DEVICE)
 
 static int virtio_mmio_init(const struct device *dev)
 {
-    uintptr_t reg;
-    uint32_t magic, version, devid, vendor;
-    DEVICE_MMIO_MAP(dev, K_MEM_CACHE_NONE);
-    reg = DEVICE_MMIO_GET(dev);
-    printk("device %s @%p\n",dev->name, dev);
-    printk("iobase %lx\n",reg);
+    uintptr_t sram0_addr;
+    uintptr_t virt_mem_ptr;
+    uintptr_t cfg_mem_ptr;
+    struct virtio_mmio_device *vmdev = DEV_DATA(dev);
 
-    magic = READ32(dev, MMIO_MAGIC_VALUE);
-    if (magic != MAGIC_VALUE)
-      {
-      printk("Bad magic value %08x\n",magic);
-      return -1;
-      }
-    version = READ32(dev, MMIO_VERSION);
-    if (version != 1)
-      {
-      printk("Bad version %08x\n", version);
-      return -1;
-      }
-    devid = virtio_get_devid(dev);
-    if (devid == 0)
-      {
-      /* Placeholder */
-      return -1;
-      }
-    vendor = READ32(dev, MMIO_VENDOR_ID);
-    printk("VIRTIO %08x:%08x\n", vendor, devid);
-    virtio_set_status(dev, VIRTIO_CONFIG_STATUS_ACK);
-    WRITE32(dev, MMIO_GUEST_PAGE_SIZE, 4096);
+    /* Map config */
+    cfg_mem_ptr = (uintptr_t)vmdev->cfg_mem.base;
+
+#if defined(CONFIG_MMU)
+    device_map(&cfg_mem_ptr, (uintptr_t)vmdev->cfg_mem.base,
+               vmdev->cfg_mem.size, K_MEM_CACHE_NONE);
+#endif
+
+    //TODO: rework detection of full virtualization mode
+    //For now, guest mode implies that the memory-region configured in the DTS
+    //is the sram0 memory region, e.g. memory-region = <&sram0>;
+
+    virt_mem_ptr = (uintptr_t)vmdev->shm_mem.base;
+    sram0_addr = (uintptr_t)DT_REG_ADDR(DT_NODELABEL(sram0));
+
+    if (sram0_addr == (uintptr_t)vmdev->shm_mem.base) {
+        //memory already mapped
+        virt_mem_ptr = (uintptr_t)Z_MEM_VIRT_ADDR((uintptr_t)vmdev->shm_mem.base);
+    } else {
+        /* Map dedicated mem region */
+#if defined(CONFIG_MMU)
+        device_map(&virt_mem_ptr, (uintptr_t)vmdev->shm_mem.base,
+                    vmdev->shm_mem.size, K_MEM_CACHE_NONE);
+#endif
+    }
+
+    if (virtio_mmio_device_init(vmdev, virt_mem_ptr, cfg_mem_ptr, (void *)dev))
+        return -1;
+
+    metal_log(METAL_LOG_DEBUG, "device %s @%p\n", dev->name, dev);
+    metal_log(METAL_LOG_DEBUG, "iobase %lx\n", cfg_mem_ptr);
+
     DEV_CFG(dev)->irq_config(dev);
 
     return 0;
-}
-
-static uint32_t virtio_mmio_get_devid(const struct device *dev)
-{
-  return READ32(dev, MMIO_DEVICE_ID);
-}
-
-static uint8_t virtio_mmio_get_status(const struct device *dev)
-{
-  return READ32(dev, MMIO_STATUS);
-}
-static void virtio_mmio_set_status(const struct device *dev, uint8_t status)
-{
-  WRITE32(dev, MMIO_STATUS, status);
-  /* maybe notify(something,something) */
-}
-static uint32_t virtio_mmio_get_features(const struct device *dev)
-{
-  uint32_t hfeatures;
-  hfeatures = READ32(dev, MMIO_HOST_FEATURES);
-  return hfeatures & DEV_DATA(dev)->gfeatures;
-}
-
-/* this is more like negotiate_features */
-static void virtio_mmio_set_features(const struct device *dev, uint32_t features)
-{
-  uint32_t hfeatures;
-  hfeatures = READ32(dev, MMIO_HOST_FEATURES);
-  features &= hfeatures;
-  WRITE32(dev, MMIO_GUEST_FEATURES, features);
-  DEV_DATA(dev)->gfeatures = features;
-  /*virtio->notify(something,something)*/
-}
-
-static void virtio_mmio_read_config(const struct device *dev, uint32_t offset,
-                                    void *dst, int length)
-{
-    int i;
-    uint8_t *d = dst;
-    for (i = 0 ; i < length; i++)
-        d[i] = READ8(dev, MMIO_CONFIG + i);
-}
-
-static void virtio_mmio_register_device(const struct device *dev, int vq_num, struct virtqueue** vqs)
-{
-    DEV_DATA(dev)->vq_num = vq_num;
-    DEV_DATA(dev)->vqs = vqs;
-}
-
-
-static struct virtqueue* virtio_mmio_setup_virtqueue(const struct device *dev,
-    unsigned int idx,
-    struct virtqueue *vq,
-    void (*cb)(void*),
-    void *cb_arg)
-{
-  uint32_t maxq;
-
-  virtqueue_init(dev, idx, vq, cb, cb_arg);
-  WRITE32(dev, MMIO_QUEUE_SEL, idx);
-  maxq = READ32(dev, MMIO_QUEUE_NUM_MAX);
-  __ASSERT(maxq !=0, "Queue not available");
-  __ASSERT(maxq >= vq->vq_nentries, "Queue too small, vring won't fit");
-  WRITE32(dev, MMIO_QUEUE_NUM, vq->vq_nentries);
-  WRITE32(dev, MMIO_QUEUE_ALIGN, 4096);
-  WRITE32(dev, MMIO_QUEUE_PFN, ((uintptr_t)Z_MEM_PHYS_ADDR((char*)vq->vq_ring->desc))/4096 );
-  return vq;
-}
-
-static void virtio_mmio_virtqueue_notify(const struct device *dev, struct virtqueue *vq)
-{
-
-  __ASSERT(vq, "NULL vq");
-  WRITE32(dev, MMIO_QUEUE_NOTIFY, vq->vq_queue_index);
-}
-
-static void virtio_mmio_isr(const struct device *dev)
-{
-    uint32_t isr=READ32(dev, MMIO_INTERRUPT_STATUS);
-    struct virtqueue *vq;
-    int i;
-
-    if (isr & 1)
-        {
-        for (i = 0; i < DEV_DATA(dev)->vq_num; i++)
-            {
-            vq = DEV_DATA(dev)->vqs[i];
-            if (vq->cb)
-              vq->cb(vq->cb_arg);
-            }
-        }
-    if (isr & 2)
-        {
-        printk("isr %p %08x CONFIG. Now what?\n", dev, isr);
-        }
-    WRITE32(dev, MMIO_INTERRUPT_ACK, isr);
 }
