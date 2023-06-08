@@ -11,7 +11,7 @@
 #include <zephyr/drivers/virtio/virtio.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/logging/log.h>
-#include <openamp/virtio_rng.h>
+#include <openamp/virtio_rng_drv.h>
 
 #define DT_DRV_COMPAT virtio_rng
 #define LOG_MODULE_NAME virtio_rng
@@ -77,8 +77,8 @@ static const struct entropy_driver_api virtio_rng_api = {
 
 #define CREATE_VIRTIO_RNG_DEVICE(inst) \
     LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, inst, CONFIG_VIRTIO_RNG_LOG_LEVEL);\
-    VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
-    static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst)};\
+    VIRTIO_MMIO_VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
+    static struct virtqueue *vq_list_##inst[] = {VIRTIO_MMIO_VQ_PTR(vq0_##inst)};\
     static const struct virtio_rng_config virtio_rng_cfg_##inst = {\
         .bus = DEVICE_DT_GET(DT_BUS(DT_INST(inst, DT_DRV_COMPAT))),\
         LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, inst)\

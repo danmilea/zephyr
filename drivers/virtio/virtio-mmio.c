@@ -62,7 +62,7 @@ void virtio_mmio_shm_pool_free(void *ptr)
             .priv = &virtio_mmio_data_##inst, \
         }, \
         .irq = DT_INST_IRQN(inst),                               \
-        .device_mode = !DT_PROP(DT_INST(inst, DT_DRV_COMPAT), driver_mode),   \
+        .device_mode = DT_NODE_HAS_PROP(DT_INST(inst, DT_DRV_COMPAT), device_mode),   \
         .cfg_mem = { \
             .base = (uint8_t *)DT_INST_REG_ADDR(inst),                   \
             .size = (unsigned int)DT_INST_REG_SIZE(inst),              \

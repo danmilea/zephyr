@@ -11,7 +11,7 @@
 #include <zephyr/net/ethernet.h>
 #include <zephyr/sys/slist.h>
 #include <zephyr/logging/log.h>
-#include <openamp/virtio_net.h>
+#include <openamp/virtio_net_drv.h>
 
 #define DT_DRV_COMPAT virtio_net
 
@@ -61,9 +61,9 @@ static const struct ethernet_api virtio_net_api = {
     static struct virtio_net_rx_desc rxdesc_##inst[RXDESC_COUNT];\
     static struct virtio_net_tx_pkt txbuf_##inst[TXDESC_COUNT];\
     static struct virtio_net_tx_desc txdesc_##inst[TXDESC_COUNT];\
-    VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
-    VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
-    static struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst), VQ_PTR(vq1_##inst)};\
+    VIRTIO_MMIO_VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
+    VIRTIO_MMIO_VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
+    static struct virtqueue *vq_list_##inst[] = {VIRTIO_MMIO_VQ_PTR(vq0_##inst), VIRTIO_MMIO_VQ_PTR(vq1_##inst)};\
     static const struct vtio_net_config virtio_net_cfg_##inst = {\
         .bus = DEVICE_DT_GET(DT_BUS(DT_INST(inst, DT_DRV_COMPAT))),\
         LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, inst)\

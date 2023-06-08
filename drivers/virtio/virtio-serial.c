@@ -9,7 +9,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/virtio/virtio.h>
 #include <zephyr/drivers/uart.h>
-#include <openamp/virtio_serial.h>
+#include <openamp/virtio_serial_drv.h>
 
 #define SERIAL_PRIORITY    PRE_KERNEL_1
 #define DT_DRV_COMPAT virtio_serial
@@ -32,9 +32,9 @@ struct uart_driver_api virtio_serial_api = {
 };
 
 #define CREATE_VIRTIO_SERIAL_DEVICE(inst) \
-    VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
-    VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
-    struct virtqueue *vq_list_##inst[] = {VQ_PTR(vq0_##inst), VQ_PTR(vq1_##inst)};\
+    VIRTIO_MMIO_VQ_DECLARE(vq0_##inst, VQIN_SIZE, 4096);\
+    VIRTIO_MMIO_VQ_DECLARE(vq1_##inst, VQOUT_SIZE, 4096);\
+    struct virtqueue *vq_list_##inst[] = {VIRTIO_MMIO_VQ_PTR(vq0_##inst), VIRTIO_MMIO_VQ_PTR(vq1_##inst)};\
     static struct virtio_serial_chan __chan0__##inst = {\
         .tx_inuse = ATOMIC_INIT(0),\
         .rx_inuse = ATOMIC_INIT(0),\
