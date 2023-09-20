@@ -88,7 +88,7 @@ static const struct ethernet_api virtio_net_api = {
 static int vtio_net_init(const struct device *dev)
 {
     struct virtio_device *vdev = NULL;
-    char *vq_names[] = {"vqin", "vqout"};
+    const char *vq_names[] = {"vqin", "vqout"};
     struct virtio_net_data *data = DEV_DATA(dev);
     void (*cbs[])(void *) = {virtio_net_vqin_cb, virtio_net_vqout_cb};
     void *cb_args[2];

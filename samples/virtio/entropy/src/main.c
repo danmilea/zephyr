@@ -6,6 +6,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/ztest.h>
+#include <metal/device.h>
 
 /*
  * @addtogroup t_entropy_api
@@ -102,6 +103,24 @@ static void test_entropy_get_entropy(void)
 {
 	zassert_true(get_entropy() == TC_PASS, NULL);
 }
+
+int init_metal(const struct device *dev)
+{
+	int32_t err;
+	struct metal_init_params metal_params = METAL_INIT_DEFAULTS;
+	metal_params.log_level = METAL_LOG_DEBUG;
+
+	(void)dev;
+
+	err = metal_init(&metal_params);
+	if (err) {
+		metal_log(METAL_LOG_ERROR, "metal_init: failed - error code %d\n", err);
+		return -ENODEV;
+	}
+
+	return 0;
+}
+SYS_INIT(init_metal, PRE_KERNEL_1, 49);
 
 void test_main(void)
 {

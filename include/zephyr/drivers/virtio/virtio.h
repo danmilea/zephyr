@@ -67,6 +67,46 @@ static inline struct virtio_device* virtio_get_vmmio_dev(const struct device *de
     return vdev;
 }
 
+/**
+ * @brief Declare a virtqueue structure.
+ *
+ * @param name	The name of the virtqueue structure.
+ * @param n		Size of the virtqueue. Must be a power of 2.
+ * @param align	Memory alignment of the associated vring structures.
+ */
+#define VIRTIO_MMIO_VQ_DECLARE(name, n, align) \
+	static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(VRING_ALIGNMENT); \
+	static struct { \
+	struct virtqueue vq; \
+	struct vq_desc_extra extra[n]; \
+	} __vq_wrapper_##name = { \
+	.vq = { \
+		.vq_nentries = n, \
+		.vq_ring = { \
+		.desc = (void *)__vrbuf_##name, \
+				.avail = (void *)((unsigned long)__vrbuf_##name + \
+					n * sizeof(struct vring_desc)), \
+				.used = (void *)((unsigned long)__vrbuf_##name + \
+					((n * sizeof(struct vring_desc) + \
+					(n + 1) * sizeof(uint16_t) + align - 1) & ~(align - 1))), \
+		}, \
+		.vq_queued_cnt = 0, \
+		.vq_free_cnt = n, \
+	}, \
+	} \
+	/**< @hideinitializer */
+
+/**
+ * @brief Retrieve a pointer to the virtqueue structure declared with VQ_DECLARE().
+ *
+ * @param name	The name of the virtqueue structure.
+ *
+ * @return A pointer to the virtqueue structure.
+ */
+#define VIRTIO_MMIO_VQ_PTR(name) \
+	(&__vq_wrapper_##name.vq) \
+	/**< @hideinitializer */
+
 #ifdef __cplusplus
 }
 #endif

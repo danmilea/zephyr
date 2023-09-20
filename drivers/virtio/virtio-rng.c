@@ -29,7 +29,7 @@ struct virtio_rng_config {
 static int vtio_rng_init(const struct device *dev)
 {
     struct virtio_device *vdev = virtio_get_vmmio_dev(DEV_CFG(dev)->bus);
-    char *vq_names[] = {"rvq"};
+    const char *vq_names[] = {"rvq"};
 
     if (!device_is_ready(DEV_CFG(dev)->bus)) {
         return -1;

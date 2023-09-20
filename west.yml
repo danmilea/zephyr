@@ -23,6 +23,8 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: openamp
       url-base: https://github.com/openamp
+    - name: danmilea
+      url-base: https://github.com/danmilea
 
   #
   # Please add items below based on alphabetical order
@@ -199,8 +201,8 @@ manifest:
       revision: 65bc5305d432c08e24a3f343006d1e7deaff4908
       path: modules/bsim_hw_models/nrf_hw_models
     - name: open-amp
-      remote: openamp
-      revision: virtio-exp
+      remote: danmilea
+      revision: virtio-native
       path: modules/lib/open-amp
     - name: openthread
       revision: bacf8d625f50dd5c4b415caee754c934ba1a262c
