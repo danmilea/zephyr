@@ -12,4 +12,11 @@ config BOARD
 config MAX_THREAD_BYTES
 	default 3
 
+if NETWORKING
+
+config NET_L2_ETHERNET
+        default y
+
+endif #NETWORKING
+
 endif # BOARD_QEMU_CORTEX_A53

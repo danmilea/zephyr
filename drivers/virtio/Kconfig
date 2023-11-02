@@ -21,4 +21,38 @@ config VIRTIO_SERIAL
 	help
 	  Enable support for VIRTIO Console (serial) device
 
+menuconfig VIRTIO_NETWORK
+	bool "Support VIRTIO Network device"
+	help
+	  Enable support for VIRTIO Network device
+
+if VIRTIO_NETWORK
+
+module = VIRTIO_NET
+module-str = virtio-net
+source "subsys/logging/Kconfig.template.log_config"
+
+#TODO: if virtio-pci is ever supported, we need some parameter to enable
+#the correct virtio-net model here
+config ETH_DEVICE
+        string
+        default "virtio-net-device"
+        help
+          Tells what Qemu network model to use. This value is given as
+          a parameter to -device qemu command line option.
+
+config VIRTIO_NET_ZEROCOPY_TX
+        bool "Enable zero-copy transmit"
+        default n
+        help
+          Don't copy the packet contents to a separate buffer.
+
+config VIRTIO_NET_ZEROCOPY_RX
+        bool "Enable zero-copy receive"
+        default n
+        help
+          Perform reception direcly into a network packet.
+
+endif #VIRTIO_NETWORK
+
 endif #VIRTIO
