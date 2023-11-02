@@ -67,6 +67,19 @@ static inline struct virtio_device* virtio_get_vmmio_dev(const struct device *de
     return vdev;
 }
 
+#define VIRTIO_RING_SIZE(n, align) \
+	(( \
+		( \
+		sizeof(struct vring_desc) * n + \
+		sizeof(struct vring_avail) + \
+		sizeof(uint16_t) * (n + 1) + \
+		align - 1 \
+		) \
+		& ~(align - 1) \
+	) + \
+	sizeof(struct vring_used) + \
+	sizeof(struct vring_used_elem) * n + sizeof(uint16_t))
+
 /**
  * @brief Declare a virtqueue structure.
  *
@@ -75,7 +88,7 @@ static inline struct virtio_device* virtio_get_vmmio_dev(const struct device *de
  * @param align	Memory alignment of the associated vring structures.
  */
 #define VIRTIO_MMIO_VQ_DECLARE(name, n, align) \
-	static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(VRING_ALIGNMENT); \
+	static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(VIRTIO_MMIO_VRING_ALIGNMENT); \
 	static struct { \
 	struct virtqueue vq; \
 	struct vq_desc_extra extra[n]; \
