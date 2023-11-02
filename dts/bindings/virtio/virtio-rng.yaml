@@ -1,0 +1,3 @@
+description: VIRTIO entropy device
+compatible: "virtio-rng"
+on-bus: virtio
