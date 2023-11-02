@@ -1,0 +1,53 @@
+/{
+
+	reserved-memory {
+		compatible = "reserved-memory";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		status = "okay";
+		ranges;
+
+		vmram0: vmram@90c0000 {
+			status = "okay";
+			reg = < 0x90c0000 0x80000 >;
+			device_type = "memory";
+			label = "vmram0";
+		};
+
+		vmram1: vmram@90d0000 {
+			status = "okay";
+			reg = < 0x9140000 0x80000 >;
+			device_type = "memory";
+			label = "vmram1";
+		};
+	};
+
+	virtio_mmio@a003e00 {
+		status = "okay";
+		label = "virtio0";
+		memory-region = <&sram0>;
+		virtio0: network {
+			label = "virt-net";
+			compatible = "virtio-net";
+		};
+	};
+
+	virtio_mmio@a003c00 {
+		status = "okay";
+		label = "virtio1";
+		memory-region = <&sram0>;
+		virtio1: serial {
+			label = "virt-serial";
+			compatible = "virtio-serial";
+		};
+	};
+
+
+	chosen {
+//		zephyr,console = &virtio1;
+//		zephyr,shell-uart = &virtio1;
+	};
+
+};
+
+/delete-node/ &eth0;
