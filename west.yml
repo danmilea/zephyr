@@ -23,6 +23,10 @@ manifest:
       url-base: https://github.com/zephyrproject-rtos
     - name: babblesim
       url-base: https://github.com/BabbleSim
+    - name: openamp
+      url-base: https://github.com/openamp
+    - name: danmilea
+      url-base: https://github.com/danmilea
 
   group-filter: [-babblesim]
 
@@ -300,7 +304,8 @@ manifest:
       revision: fa1daebb0f6f7ef135f9d2128590adfd88c0af44
       path: modules/bsim_hw_models/nrf_hw_models
     - name: open-amp
-      revision: 42b7c577714b8f22ce82a901e19c1814af4609a8
+      remote: danmilea
+      revision: virtio-native
       path: modules/lib/open-amp
     - name: openthread
       revision: f7690fe7e9d638341921808cba6a3e695ec0131e
