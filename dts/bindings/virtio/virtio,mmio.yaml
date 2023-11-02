@@ -1,0 +1,27 @@
+description: VIRTIO MMIO bindings
+compatible: "virtio,mmio"
+
+include: base.yaml
+
+bus: virtio
+
+properties:
+    reg:
+      required: true
+    interrupts:
+      required: true
+    dma-coherent:
+      type: boolean
+    memory-region:
+      type: phandle
+      required: false
+      default: &sram0
+    driver-mode:
+      type: boolean
+      required: false
+
+interrupt-cells:
+  - type
+  - irq
+  - flags
+  - priority

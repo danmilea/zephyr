@@ -1,0 +1,3 @@
+description: VIRTIO serial device
+compatible: "virtio-serial"
+on-bus: virtio
