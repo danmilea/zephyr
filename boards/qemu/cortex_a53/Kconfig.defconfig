@@ -11,6 +11,9 @@ config MAX_THREAD_BYTES
 
 if NETWORKING
 
+config NET_L2_ETHERNET
+        default y
+
 choice NET_QEMU_NETWORKING
 	default NET_QEMU_ETHERNET if QEMU_CORTEX_A53_ETH_E1000
 endchoice
