@@ -55,6 +55,20 @@ config XLNX_IPI
 	  Inter Processor Interrupt driver for AMD-Xilinx
 	  platforms such as ZynqMP Ultrascale+.
 
+config XLNX_IPI_PREKERNEL_INIT
+	bool "AMD-Xilinx IPM pre-kernel init level"
+	default n
+	depends on XLNX_IPI
+	help
+	  AMD-Xilinx IPM pre-kernel initialization level.
+
+config XLNX_IPI_INIT_PRIORITY
+	int "AMD-Xilinx IPM init priority"
+	default 50
+	depends on XLNX_IPI
+	help
+	  AMD-Xilinx IPM initialization priority.
+
 source "drivers/ipm/Kconfig.nrfx"
 source "drivers/ipm/Kconfig.imx"
 source "drivers/ipm/Kconfig.stm32"
