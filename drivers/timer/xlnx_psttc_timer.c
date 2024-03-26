@@ -201,6 +201,9 @@ static int sys_clock_driver_init(void)
 
 	return 0;
 }
-
+#if defined(HVL_VIRTIO)
+	 SYS_INIT(sys_clock_driver_init, PRE_KERNEL_1, 41);
+#else
 SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
 	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);
+#endif

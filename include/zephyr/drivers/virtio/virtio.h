@@ -57,6 +57,13 @@ extern "C" {
 
 typedef struct virtio_device* (*virt_get_virtio_device)(const struct device *dev);
 
+#if defined(HVL_VIRTIO)
+void virtio_mmio_shm_pool_init(void *mem, size_t size);
+void* virtio_mmio_shm_pool_alloc(size_t size);
+void virtio_mmio_shm_pool_free(void *ptr);
+void virtio_mmio_hvl_wait_cfg_event(struct virtio_device *vdev, uint32_t usec);
+#endif
+
 __subsystem struct virtio_driver_api {
     virt_get_virtio_device get_virtio_device;
 };
@@ -80,6 +87,15 @@ static inline struct virtio_device* virtio_get_vmmio_dev(const struct device *de
 	sizeof(struct vring_used) + \
 	sizeof(struct vring_used_elem) * n + sizeof(uint16_t))
 
+#if defined(HVL_VIRTIO)  /* vrings in individual sections */
+#define VRBUF_DECLARE(name, n, align, section_name) \
+static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(4096) \
+	__attribute((__section__(".shared.vring."#section_name)))
+#else
+#define VRBUF_DECLARE(name, n, align, section_name) \
+static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(4096)
+#endif
+
 /**
  * @brief Declare a virtqueue structure.
  *
@@ -88,7 +104,7 @@ static inline struct virtio_device* virtio_get_vmmio_dev(const struct device *de
  * @param align	Memory alignment of the associated vring structures.
  */
 #define VIRTIO_MMIO_VQ_DECLARE(name, n, align) \
-	static char __vrbuf_##name[VIRTIO_RING_SIZE(n, align)] __aligned(VIRTIO_MMIO_VRING_ALIGNMENT); \
+	VRBUF_DECLARE(name, n, align, name); \
 	static struct { \
 	struct virtqueue vq; \
 	struct vq_desc_extra extra[n]; \
