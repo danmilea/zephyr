@@ -1,0 +1,81 @@
+/{
+
+	soc {
+		uart1: uart@ff010000 {
+			compatible = "xlnx,xuartps";
+			reg = <0xff010000 0x4c>;
+			status = "disabled";
+			interrupts = <GIC_SPI 22 IRQ_TYPE_LEVEL
+					IRQ_DEFAULT_PRIORITY>;
+			interrupt-names = "irq_1";
+		};
+	};
+	reserved-memory {
+		compatible = "reserved-memory";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		status = "okay";
+		ranges;
+
+		vmram0: vmram@37000000 {
+			status = "okay";
+			reg = < 0x37000000 0x80000 >;
+			device_type = "memory";
+			label = "vmram0";
+		};
+	};
+	virtio_mmio@37000000 {
+		dma-coherent;
+		interrupt-parent = < &gic >;
+		interrupts = < 0x0 0x2f 0x1 0x0 >;
+		reg = < 0x37000000 0x200 >;
+		compatible = "virtio,mmio";
+		status = "okay";
+		label = "virtio0";
+		memory-region = < &vmram0 >;
+		virtio0: rng {
+			label = "virt-rng";
+			compatible = "virtio-rng";
+		};
+	};
+	virtio_mmio@37000200 {
+		dma-coherent;
+		interrupt-parent = < &gic >;
+		interrupts = < 0x0 0x30 0x1 0x0 >;
+		reg = < 0x37000200 0x200 >;
+		compatible = "virtio,mmio";
+		status = "okay";
+		label = "virtio1";
+		memory-region = < &vmram0 >;
+		virtio1: network {
+			label = "virt-net";
+			compatible = "virtio-net";
+		};
+	};
+	chosen {
+		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+		zephyr,entropy = &virtio0;
+		zephyr,ipc = &rpu0_apu_mailbox;
+	};
+};
+&rpu0_ipi {
+	status = "okay";
+};
+
+&rpu0_apu_mailbox {
+	remote-ipi-id = < 0x7 >;
+	status = "okay";
+};
+
+&uart1 {
+	status = "okay";
+	current-speed = <115200>;
+	clock-frequency = <99999901>;
+};
+
+/delete-node/ &uart0;
+/delete-node/ &gem0;
+/delete-node/ &gem1;
+/delete-node/ &gem2;
+/delete-node/ &gem3;
