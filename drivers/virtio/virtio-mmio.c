@@ -95,12 +95,29 @@ void virtio_mmio_shm_pool_free(void *ptr)
 
 DT_INST_FOREACH_STATUS_OKAY(CREATE_VIRTIO_MMIO_DEVICE)
 
+#if defined(HVL_VIRTIO)
+void virtio_mmio_hvl_ipi(void *param) __attribute__((weak));
+void virtio_mmio_hvl_ipi(void *param) {}
+
+struct hvl_dispatch hvl_func = {
+	.hvl_shm_pool_init = virtio_mmio_shm_pool_init,
+	.hvl_shm_pool_alloc = virtio_mmio_shm_pool_alloc,
+	.hvl_shm_pool_free = virtio_mmio_shm_pool_free,
+	.hvl_wait_cfg_event = virtio_mmio_hvl_wait_cfg_event,
+	.hvl_ipi = virtio_mmio_hvl_ipi,
+};
+#endif
+
 static int virtio_mmio_init(const struct device *dev)
 {
     uintptr_t sram0_addr;
     uintptr_t virt_mem_ptr;
     uintptr_t cfg_mem_ptr;
     struct virtio_mmio_device *vmdev = DEV_DATA(dev);
+
+#if defined(HVL_VIRTIO)
+    vmdev->hvl_func = &hvl_func;
+#endif
 
     /* Map config */
     cfg_mem_ptr = (uintptr_t)vmdev->cfg_mem.base;
@@ -119,7 +136,7 @@ static int virtio_mmio_init(const struct device *dev)
 
     if (sram0_addr == (uintptr_t)vmdev->shm_mem.base) {
         //memory already mapped
-        virt_mem_ptr = (uintptr_t)Z_MEM_VIRT_ADDR((uintptr_t)vmdev->shm_mem.base);
+        virt_mem_ptr = (uintptr_t)K_MEM_VIRT_ADDR((uintptr_t)vmdev->shm_mem.base);
     } else {
         /* Map dedicated mem region */
 #if defined(CONFIG_MMU)
@@ -138,3 +155,19 @@ static int virtio_mmio_init(const struct device *dev)
 
     return 0;
 }
+
+#if defined(HVL_VIRTIO)
+void virtio_mmio_hvl_wait_cfg_event(struct virtio_device *vdev, uint32_t usec)
+{
+	struct virtio_mmio_device *vmdev = metal_container_of(vdev,
+							      struct virtio_mmio_device, vdev);
+
+    if (k_can_yield()) {
+        if (vmdev && (vmdev->hvl_mode == 1)) {
+            k_sem_take(&vmdev->cfg_sem, K_USEC(usec));
+        }
+    } else {
+        k_busy_wait(usec);
+    }
+}
+#endif
