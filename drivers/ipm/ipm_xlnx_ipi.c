@@ -208,6 +208,12 @@ static struct ipm_driver_api xlnx_ipi_api = {
 
 #define GET_CHILD_DEV(node_id) DEVICE_DT_GET(node_id),
 
+#if CONFIG_XLNX_IPI_PREKERNEL_INIT
+#define CONFIG_XLNX_IPI_INIT_LEVEL PRE_KERNEL_1
+#else
+#define CONFIG_XLNX_IPI_INIT_LEVEL POST_KERNEL
+#endif
+
 #define XLNX_IPI_CHILD(ch_node)                                                                    \
 	struct xlnx_ipi_child_data xlnx_ipi_child_data##ch_node = {                                \
 		.enabled = false,                                                                  \
@@ -224,8 +230,8 @@ static struct ipm_driver_api xlnx_ipi_api = {
 		.host_ipi_reg = DT_REG_ADDR_BY_NAME(DT_PARENT(ch_node), host_ipi_reg),             \
 	};                                                                                         \
 	DEVICE_DT_DEFINE(ch_node, NULL, NULL, &xlnx_ipi_child_data##ch_node,			   \
-			 &xlnx_ipi_child_config##ch_node, POST_KERNEL,                             \
-			 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &xlnx_ipi_api);
+			 &xlnx_ipi_child_config##ch_node, CONFIG_XLNX_IPI_INIT_LEVEL,                             \
+			 CONFIG_XLNX_IPI_INIT_PRIORITY, &xlnx_ipi_api);
 
 #define XLNX_IPI(inst)                                                                             \
 	DT_INST_FOREACH_CHILD_STATUS_OKAY(inst, XLNX_IPI_CHILD);                                   \
@@ -240,7 +246,7 @@ static struct ipm_driver_api xlnx_ipi_api = {
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, &xlnx_ipi_init, NULL, NULL, /* data */                         \
 			      &xlnx_ipi_config##inst,           /* conf */                         \
-			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);             \
+			      CONFIG_XLNX_IPI_INIT_LEVEL, CONFIG_XLNX_IPI_INIT_PRIORITY, NULL);             \
 	static int xlnx_ipi_config_func##inst(const struct device *dev)                            \
 	{                                                                                          \
 		IRQ_CONNECT(DT_INST_IRQN(inst), DT_INST_IRQ(inst, priority), xlnx_mailbox_rx_isr,  \
