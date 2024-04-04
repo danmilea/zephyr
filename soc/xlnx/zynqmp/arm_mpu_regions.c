@@ -30,6 +30,15 @@
 				| MPU_RASR_XN_Msk) \
 	}
 
+#if defined(HVL_VIRTIO)
+#define MPUTYPE_PRIV_WBWACACHE \
+	{ \
+		.rasr = (P_RW_U_NA_Msk \
+				| (5 << MPU_RASR_TEX_Pos) \
+				| MPU_RASR_B_Msk) \
+	}
+#endif
+
 #define MPUTYPE_PRIV_DEVICE \
 	{ \
 		.rasr = (P_RW_U_NA_Msk \
@@ -46,7 +55,11 @@ static const struct arm_mpu_region mpu_regions[] = {
 	MPU_REGION_ENTRY("SRAM_PRIV",
 			0x00000000,
 			REGION_2G,
+#if defined(HVL_VIRTIO)
+			MPUTYPE_PRIV_WBWACACHE),
+#else
 			MPUTYPE_PRIV_WBWACACHE_XN),
+#endif
 
 	MPU_REGION_ENTRY("SRAM",
 			0x00000000,
